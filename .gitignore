@@ -1,0 +1,25 @@
+# Backend Node dependencies
+node_modules/
+
+# Frontend Node dependencies
+frontend/node_modules/
+
+# Frontend CSS build output
+frontend/css/style.css
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# Backend Build output
+dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS generated files
+.DS_Store
+Thumbs.db

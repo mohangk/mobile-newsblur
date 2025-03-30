@@ -1,0 +1,26 @@
+# Top-level configuration
+name = "nbproxy" # Choose a unique name for your worker
+main = "src/index.ts"          # Entry point for your code (TypeScript file)
+compatibility_date = "2024-07-01" # Use a recent compatibility date
+
+# Environment variables accessible in your worker via c.env
+[vars]
+# IMPORTANT: Set this to the actual URL of your frontend application
+FRONTEND_URL = "http://localhost:8080"
+# NEWSBLUR_BASE_URL = "https://newsblur.com" # Optional: Can be hardcoded or put here
+
+# KV Namespace binding
+# 1. Create the namespace: wrangler kv:namespace create NEWSBLUR_SESSIONS_TS
+# 2. Copy the output 'id' and paste it below.
+[[kv_namespaces]]
+binding = "SESSIONS" # How you access it in code (c.env.SESSIONS)
+id = "81798395f4524e11b6b9f3ed89d42801" # Replace with the actual ID from the command above
+# preview_id = "YOUR_PREVIEW_KV_NAMESPACE_ID_HERE" # Optional: If you want a separate KV for local dev (`wrangler dev`)
+
+# Build configuration removed as wrangler can handle simple TS directly
+
+# Optional: For local development (`wrangler dev`)
+[dev]
+# Consider setting a different FRONTEND_URL for local dev if needed
+# port = 8787 # Optional: Port for local dev server
+# local_protocol = "http" # Optional
