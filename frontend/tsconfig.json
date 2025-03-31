@@ -1,0 +1,45 @@
+{
+  "compilerOptions": {
+    /* Base Options */
+    "target": "ESNext",           // Compile to modern JavaScript
+    "module": "ESNext",           // Use ES modules
+    "lib": ["DOM", "DOM.Iterable", "ESNext"], // Include DOM and latest JS features
+    "allowJs": true,             // Allow mixing JS and TS files (useful during conversion)
+    "checkJs": false,            // Don't type-check JS files
+    "sourceMap": true,           // Generate source maps for debugging
+    "outDir": "./dist",          // Output directory for build (Vite might override)
+    "rootDir": "./js",           // Specify root directory of source files
+    "isolatedModules": true,     // Ensure files can be compiled independently (required by Vite)
+    "esModuleInterop": true,     // Enable interoperability between CommonJS and ES modules
+    "forceConsistentCasingInFileNames": true, // Enforce consistent file casing
+
+    /* Strict Type-Checking Options */
+    "strict": true,                // Enable all strict type-checking options
+    "noImplicitAny": true,         // Raise error on expressions and declarations with an implied 'any' type
+    "strictNullChecks": true,      // Enable strict null checks
+    "strictFunctionTypes": true,   // Enable strict checking of function types
+    "strictBindCallApply": true,   // Enable strict 'bind', 'call', and 'apply' methods on functions
+    "strictPropertyInitialization": true, // Ensure class properties are initialized
+    "noImplicitThis": true,        // Raise error on 'this' expressions with an implied 'any' type
+    "alwaysStrict": true,          // Parse in strict mode and emit "use strict"
+
+    /* Module Resolution Options */
+    "moduleResolution": "Bundler", // Use bundler-style module resolution (Vite's preferred)
+    "resolveJsonModule": true,     // Allow importing JSON modules
+    "baseUrl": ".",                // Base directory for non-relative module imports
+    "paths": {                     // Define paths for module resolution (optional)
+      "@/*": ["./js/*"]
+    },
+
+    /* Linting Options */
+    "noUnusedLocals": true,        // Report errors on unused local variables
+    "noUnusedParameters": true,    // Report errors on unused parameters
+    "noImplicitReturns": true,     // Report error when not all code paths in function return a value
+    "noFallthroughCasesInSwitch": true, // Report errors for fallthrough cases in switch statement
+
+    /* Other */
+    "skipLibCheck": true           // Skip type checking of all declaration files (*.d.ts)
+  },
+  "include": ["js/**/*.ts", "js/**/*.d.ts", "js/**/*.js"], // Files to include in compilation
+  "exclude": ["node_modules", "dist"] // Files/directories to exclude
+} 
