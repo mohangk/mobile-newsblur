@@ -1,5 +1,23 @@
 // frontend/js/app.js
 
+// Import necessary functions from API and UI modules
+import {
+    login as apiLogin,
+    logout as apiLogout,
+    getFeeds as apiGetFeeds,
+    checkAuth as apiCheckAuth
+} from './api.js';
+
+import {
+    showLoginView,
+    showFeedListView,
+    showLoginMessage,
+    showFeedMessage,
+    setLoginButtonState,
+    renderFeedList,
+    clearFeedDisplay
+} from './ui.js';
+
 // --- Configuration ---
 // Adjust this if your local worker runs on a different port or if deployed
 const WORKER_BASE_URL = 'http://localhost:8787'; // Default for wrangler dev
@@ -20,90 +38,72 @@ const logoutButton = document.getElementById('logout-button');
 // --- State --- (Simple state management)
 let isLoading = false; // Prevent multiple simultaneous requests
 
-// --- Functions --- //
-
-/** Helper to show/hide elements using Tailwind's hidden class */
-function setVisibility(element, visible) {
-    if (!element) return;
-    if (visible) {
-        element.classList.remove('hidden');
-    } else {
-        element.classList.add('hidden');
-    }
-}
-
-/** Show the login view and hide the feed list view */
-function showLoginView() {
-    setVisibility(loginView, true);
-    setVisibility(feedListView, false);
-    if (feedListElement) feedListElement.innerHTML = ''; // Clear feed list when logging out
-    if (feedMessageArea) feedMessageArea.textContent = ''; // Clear feed messages
-}
-
-/** Show the feed list view and hide the login view */
-function showFeedListView() {
-    setVisibility(loginView, false);
-    setVisibility(feedListView, true);
-    if (loginMessageArea) loginMessageArea.textContent = ''; // Clear login messages
-    if (passwordInput) passwordInput.value = ''; // Clear password field
-}
-
-/** Displays a message in the login message area */
-function showLoginMessage(message, isError = false) {
-    if (!loginMessageArea) return;
-    loginMessageArea.textContent = message;
-    loginMessageArea.className = `text-xs italic h-4 ${isError ? 'text-red-500' : 'text-green-600'}`;
-    // Optionally hide after a few seconds if it's not an error?
-}
-
-/** Displays a message in the feed list message area */
-function showFeedMessage(message, isError = false) {
-    if (!feedMessageArea) return;
-    feedMessageArea.textContent = message;
-    feedMessageArea.className = `text-center mb-4 h-5 ${isError ? 'text-red-600 font-semibold' : 'text-gray-500 dark:text-gray-400'}`;
-}
+// --- Helper Functions ---
 
 /**
- * Checks if the user is likely already authenticated by trying to fetch feeds.
+ * Recursively extracts feed objects from the nested folder structure provided by NewsBlur API.
+ * Flattens the structure into a simple array of feed objects.
  */
-async function checkAuthStatus() {
-    console.log('Checking auth status...');
-    try {
-        const response = await fetch(`${API_BASE}/reader/feeds`, {
-            method: 'GET',
-            credentials: 'include',
-            headers: {
-                'Accept': 'application/json',
-            },
+function extractFeedsFromFolders(structure, allFeedsMap, extractedFeeds) {
+    if (typeof structure === 'number') {
+        // If it's a number, it's a feed ID
+        if (allFeedsMap[structure]) extractedFeeds.push(allFeedsMap[structure]);
+    } else if (Array.isArray(structure)) {
+        // If it's an array, process each item
+        structure.forEach(item => extractFeedsFromFolders(item, allFeedsMap, extractedFeeds));
+    } else if (typeof structure === 'object' && structure !== null) {
+        // If it's an object, it represents a folder; process its contents
+        Object.values(structure).forEach(folderContent => {
+            extractFeedsFromFolders(folderContent, allFeedsMap, extractedFeeds);
         });
+    }
+}
 
-        if (response.ok) {
-            console.log('Already authenticated.');
+
+// --- Core Logic Functions ---
+
+/**
+ * Checks authentication status on load and displays the appropriate view.
+ */
+export async function checkAuthAndLoadView() {
+    console.log('App: Checking auth status...');
+    isLoading = true;
+    try {
+        const isAuthenticated = await apiCheckAuth();
+        if (isAuthenticated) {
+            console.log("App: Already authenticated.");
             showFeedListView();
-            fetchAndRenderFeeds(); // Fetch feeds since we're logged in
-        } else if (response.status === 401) {
-            console.log('Not authenticated.');
-            showLoginView();
+            
+            isLoading = false;
+            
+            console.log("DEBUG: About to call fetchAndDisplayFeeds from checkAuthAndLoadView (isLoading reset)");
+            await fetchAndDisplayFeeds();
         } else {
-            // Handle other potential errors (e.g., server down)
-            console.error('Unexpected error checking auth:', response.status);
-            showLoginView(); // Default to login view on unexpected errors
-            showLoginMessage(`Error: ${response.statusText}`, true);
+            console.log('App: Not authenticated.');
+            showLoginView();
+            isLoading = false; // Reset here too if not authenticated
         }
     } catch (error) {
-        console.error('Network error checking auth:', error);
-        showLoginView(); // Default to login view on network errors
-        showLoginMessage('Network error. Is the server running?', true);
-    }
+        console.error('App: Error checking auth:', error);
+        showLoginView(); 
+        showLoginMessage('Error contacting server. Please try again later.', true);
+        isLoading = false; // Reset on error
+    } 
+    // Removed the finally block here as isLoading is handled in all paths
 }
 
 /**
  * Handles the login form submission.
  * @param {Event} event The form submission event.
  */
-async function handleLoginFormSubmit(event) {
-    event.preventDefault(); // Prevent actual form submission
+export async function handleLoginSubmit(event) {
+    event.preventDefault(); // Prevent default form submission
     if (isLoading) return;
+
+    // Get form elements within the handler
+    const loginForm = document.getElementById('login-form');
+    const usernameInput = loginForm.querySelector('#username');
+    const passwordInput = loginForm.querySelector('#password');
 
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
@@ -115,232 +115,124 @@ async function handleLoginFormSubmit(event) {
 
     isLoading = true;
     showLoginMessage('Logging in...');
-    if (loginButton) loginButton.disabled = true;
+    setLoginButtonState(true);
 
     try {
-        const response = await fetch(`${API_BASE}/api/login`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'application/json',
-            },
-            body: new URLSearchParams({
-                'username': username,
-                'password': password,
-            }),
-        });
+        await apiLogin(username, password);
+        console.log('App: Login successful');
+        showLoginMessage('Success!', false);
+        showFeedListView();
+        
+        isLoading = false; 
 
-        const data = await response.json();
-
-        if (response.ok && data.authenticated) {
-            showLoginMessage('Success!', false);
-            // Delay slightly to show success message before switching view
-            setTimeout(() => {
-                showFeedListView();
-                fetchAndRenderFeeds();
-            }, 500);
-        } else {
-            // Use error message from API response if available
-            let errorMessage = 'Login failed. Please check credentials.';
-            if (data.errors && data.errors.__all__ && data.errors.__all__.length > 0) {
-                errorMessage = data.errors.__all__[0];
-            } else if (data.message) {
-                 errorMessage = data.message;
-            }
-            throw new Error(errorMessage);
-        }
-
+        console.log("DEBUG: About to call fetchAndDisplayFeeds from handleLoginSubmit (isLoading reset)");
+        await fetchAndDisplayFeeds();
     } catch (error) {
-        console.error('Login error:', error);
-        showLoginMessage(error.message || 'An unknown error occurred.', true);
+        console.error('App: Login error:', error);
+        showLoginMessage(error.message || 'Login failed. Please check credentials.', true);
     } finally {
-        isLoading = false;
-        if (loginButton) loginButton.disabled = false;
-    }
-}
-
-
-/**
- * Fetches and renders the list of feeds.
- */
-async function fetchAndRenderFeeds() {
-    if (isLoading) return;
-    isLoading = true;
-    showFeedMessage('Loading feeds...');
-    if (feedListElement) feedListElement.innerHTML = ''; // Clear previous list
-
-    try {
-        // Fetch request is the same as in checkAuthStatus, could be refactored
-        const response = await fetch(`${API_BASE}/reader/feeds?include_favicons=true`, {
-            method: 'GET',
-            credentials: 'include',
-            headers: {
-                'Accept': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            if (response.status === 401) {
-                // Session expired or became invalid between check and now
-                showLoginView();
-                showLoginMessage('Session expired. Please log in again.', true);
-                return; // Stop execution here
-            }
-            throw new Error(`Failed to fetch feeds. Status: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data.authenticated === false || !data.feeds) {
-             throw new Error(data.message || 'Authentication failed or no feeds data.');
-        }
-
-        renderFeeds(data.feeds, data.folders);
-        showFeedMessage(''); // Clear loading message on success
-
-    } catch (error) {
-        console.error('Error fetching/rendering feeds:', error);
-        showFeedMessage(error.message || 'An unknown error occurred while fetching feeds.', true);
-    } finally {
-        isLoading = false;
+        // Still ensure isLoading is false in finally, especially for the error case
+        isLoading = false; 
+        setLoginButtonState(false);
     }
 }
 
 /**
- * Recursively extracts feed objects from the nested folder structure.
+ * Fetches feeds using the API module and renders them using the UI module.
  */
-function extractFeeds(structure, allFeedsMap, extractedFeeds) {
-    if (typeof structure === 'number') {
-        if (allFeedsMap[structure]) extractedFeeds.push(allFeedsMap[structure]);
-    } else if (Array.isArray(structure)) {
-        structure.forEach(item => extractFeeds(item, allFeedsMap, extractedFeeds));
-    } else if (typeof structure === 'object' && structure !== null) {
-        Object.values(structure).forEach(folderContent => {
-            extractFeeds(folderContent, allFeedsMap, extractedFeeds);
-        });
-    }
-}
-
-/**
- * Renders the list of feeds in the UI.
- */
-function renderFeeds(feedsData, foldersData) {
-    if (!feedListElement || !feedsData) return;
-
-    const allFeeds = [];
-    extractFeeds(foldersData, feedsData, allFeeds);
-    allFeeds.sort((a, b) => (a.feed_title || '').toLowerCase().localeCompare((b.feed_title || '').toLowerCase()));
-
-    feedListElement.innerHTML = ''; // Clear again just in case
-
-    if (allFeeds.length === 0) {
-        showFeedMessage('No feeds found. Add some on NewsBlur!');
+export async function fetchAndDisplayFeeds() {
+    console.log("DEBUG: fetchAndDisplayFeeds called");
+    if (isLoading) {
+        console.log("DEBUG: fetchAndDisplayFeeds returning early (isLoading=true)");
         return;
     }
+    isLoading = true;
+    showFeedMessage('Loading feeds...');
+    clearFeedDisplay(); // Clear previous list and message
 
-    allFeeds.forEach(renderFeedItem);
+    try {
+        console.log("DEBUG: Calling api.getFeeds...");
+        const data = await apiGetFeeds(); 
+        console.log("DEBUG: api.getFeeds returned:", data);
+        const feedsArray = data.feeds ? Object.values(data.feeds) : [];
+        console.log(`DEBUG: Processing feeds. Resulting feedsArray: ${JSON.stringify(feedsArray)}`);
+
+        renderFeedList(feedsArray, handleFeedItemClick);
+        showFeedMessage(''); // Clear loading/error message on success or empty
+
+    } catch (error) {
+        console.error('DEBUG: Error in fetchAndDisplayFeeds:', error);
+        showFeedMessage(`Error loading feeds: ${error.message}`, true);
+    } finally {
+        isLoading = false;
+        console.log("DEBUG: fetchAndDisplayFeeds finished (isLoading=false)");
+    }
 }
 
 /**
- * Renders a single feed item and appends it to the list.
+ * Handles clicking on a feed item.
+ * (Placeholder for future functionality)
+ * @param {string|number} feedId The ID of the clicked feed.
  */
-function renderFeedItem(feed) {
-     if (!feedListElement) return;
-
-    const listItem = document.createElement('li');
-    // Added dark mode classes and border styles
-    listItem.className = 'flex items-center py-3 px-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0';
-    listItem.dataset.feedId = feed.id;
-
-    const unreadCount = (feed.ps || 0) + (feed.nt || 0) + (feed.ng || 0);
-
-    const faviconUrl = feed.favicon_url || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    const faviconImg = document.createElement('img');
-    faviconImg.src = faviconUrl;
-    faviconImg.alt = '';
-    faviconImg.className = 'w-5 h-5 mr-3 rounded-sm flex-shrink-0 object-contain';
-    faviconImg.onerror = () => { faviconImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; };
-
-    const titleSpan = document.createElement('span');
-    // Added dark mode text color
-    titleSpan.className = 'flex-grow font-medium text-gray-700 dark:text-gray-200 truncate';
-    titleSpan.textContent = feed.feed_title || 'Untitled Feed';
-
-    listItem.appendChild(faviconImg);
-    listItem.appendChild(titleSpan);
-
-    if (unreadCount > 0) {
-        const countSpan = document.createElement('span');
-        countSpan.className = 'bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-2 flex-shrink-0';
-        countSpan.textContent = unreadCount;
-        listItem.appendChild(countSpan);
-    }
-
-    listItem.addEventListener('click', handleFeedClick);
-    feedListElement.appendChild(listItem);
-}
-
-/**
- * Handles clicks on a feed list item.
- */
-function handleFeedClick(event) {
-    const feedId = event.currentTarget.dataset.feedId;
-    if (feedId) {
-        console.log(`Feed clicked: ${feedId}`);
-        // TODO: Implement logic to fetch and display feed items
-        showFeedMessage(`Loading items for feed ${feedId}...`);
-    }
+export function handleFeedItemClick(feedId) {
+    if (isLoading) return;
+    console.log(`App: Feed item clicked: ${feedId}`);
+    // Future: Navigate to feed detail view, fetch items, etc.
+    showFeedMessage(`Selected Feed ID: ${feedId}`); // Temporary feedback
 }
 
 /**
  * Handles the logout button click.
  */
-async function handleLogoutClick() {
+export async function handleLogout() {
     if (isLoading) return;
+    console.log('App: Logging out...');
     isLoading = true;
-    showFeedMessage('Logging out...');
+    // Optionally show a message
 
     try {
-        // NOTE: We still need to implement the /proxy/api/logout endpoint in the worker!
-        const response = await fetch(`${API_BASE}/api/logout`, {
-            method: 'POST',
-            credentials: 'include',
-        });
-
-        // Regardless of backend success, switch to login view
-        // The checkAuthStatus on next load will confirm logout
-        console.log('Logout response status:', response.status);
-
+        await apiLogout();
+        console.log('App: Logout successful.');
     } catch (error) {
-        console.error('Logout error:', error);
-        // Show error in login view after switching
-        showLoginView();
-        showLoginMessage('Logout failed. Please try again.', true);
-        isLoading = false;
-        return; // Prevent further state changes in finally block for this case
+        // Log error but proceed to show login view anyway
+        console.error('App: Logout API call failed:', error);
     } finally {
-         if (!isLoading) { // Only reset if not already reset in catch block
-            isLoading = false;
-         }
-         // Always switch to login view after attempting logout
-         showLoginView();
-         console.log('Logged out (client-side).');
+        // Always show login view after logout attempt
+        showLoginView();
+        isLoading = false;
     }
 }
 
+/**
+ * Sets up event listeners and performs the initial auth check.
+ * This should be called once the DOM is ready.
+ */
+export async function initializeApp() {
+    console.log('App: Initializing...');
 
-// --- Initialization & Event Listeners ---
+    // Get elements needed for event listeners
+    const loginForm = document.getElementById('login-form');
+    const logoutButton = document.getElementById('logout-button');
 
-// Add listeners only after DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+    // Add event listeners
     if (loginForm) {
-        loginForm.addEventListener('submit', handleLoginFormSubmit);
-    }
-    if (logoutButton) {
-        logoutButton.addEventListener('click', handleLogoutClick);
+        loginForm.addEventListener('submit', handleLoginSubmit);
+    } else {
+        console.error("App: Login form not found during init!");
     }
 
-    // Check initial authentication status
-    checkAuthStatus();
-});
+    if (logoutButton) {
+        logoutButton.addEventListener('click', handleLogout);
+    } else {
+        console.error("App: Logout button not found during init!");
+    }
+
+    // Initial check to see if user is already logged in
+    // Use await here to ensure check completes before potential test assertions
+    await checkAuthAndLoadView();
+    console.log('App: Initialization complete.');
+}
+
+// --- Initialization ---
+
+document.addEventListener('DOMContentLoaded', initializeApp);
