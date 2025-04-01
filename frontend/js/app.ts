@@ -1,241 +1,148 @@
 // frontend/js/app.ts
 
 // Import necessary functions from API and UI modules
-import {
-    login as apiLogin,
-    logout as apiLogout,
-    getFeeds as apiGetFeeds,
-    checkAuth as apiCheckAuth,
-    Feed,
-    FeedMap,
-    ApiError
-} from './api.js';
+import * as api from './api';
+// Re-import necessary types specifically FROM ./types
+import type { Feed, FeedMap, FeedResponse } from './types';
+// Import the whole ui module
+import * as ui from './ui';
 
-import {
-    showLoginView,
-    showFeedListView,
-    showLoginMessage,
-    showFeedMessage,
-    setLoginButtonState,
-    renderFeedList,
-    clearFeedDisplay
-} from './ui.js';
+// --- State ---
+let isLoading = false; // Prevent concurrent API calls
 
-// --- Configuration ---
-// Adjust this if your local worker runs on a different port or if deployed
+// --- Core Application Logic ---
 
-// --- DOM Elements ---
-const loginView = document.getElementById('login-view')!;
-const feedListView = document.getElementById('feed-list-view')!;
-const loginForm = document.getElementById('login-form') as HTMLFormElement | null;
-const usernameInput = document.getElementById('username') as HTMLInputElement | null;
-const passwordInput = document.getElementById('password') as HTMLInputElement | null;
-const loginButton = document.getElementById('login-button') as HTMLButtonElement | null;
-const loginMessageArea = document.getElementById('login-message-area')!;
-const feedListElement = document.getElementById('feed-list')!;
-const feedMessageArea = document.getElementById('feed-message-area')!;
-const logoutButton = document.getElementById('logout-button') as HTMLButtonElement | null;
-
-// --- State --- (Simple state management)
-let isLoading = false; // Prevent multiple simultaneous requests
-
-// --- Helper Functions ---
-
-/**
- * Recursively extracts feed objects from the nested folder structure provided by NewsBlur API.
- * Flattens the structure into a simple array of feed objects.
- * Note: The exact structure type might need refinement based on actual API response.
- */
-function extractFeedsFromFolders(
-    structure: any,
-    allFeedsMap: FeedMap,
-    extractedFeeds: Feed[]
-): void {
-    if (typeof structure === 'number' || typeof structure === 'string') {
-        const feedIdStr = String(structure);
-        if (allFeedsMap[feedIdStr]) extractedFeeds.push(allFeedsMap[feedIdStr]);
-    } else if (Array.isArray(structure)) {
-        structure.forEach(item => extractFeedsFromFolders(item, allFeedsMap, extractedFeeds));
-    } else if (typeof structure === 'object' && structure !== null) {
-        Object.values(structure).forEach(folderContent => {
-            extractFeedsFromFolders(folderContent, allFeedsMap, extractedFeeds);
-        });
-    }
-}
-
-
-// --- Core Logic Functions ---
-
-/**
- * Checks authentication status on load and displays the appropriate view.
- */
-export async function checkAuthAndLoadView(): Promise<void> {
-    console.log('App: Checking auth status...');
+/** Checks authentication status and loads the appropriate view */
+async function checkAuthAndLoadView(): Promise<void> {
+    if (isLoading) return;
     isLoading = true;
+    console.log("App: Checking auth status...");
     try {
-        const isAuthenticated = await apiCheckAuth();
+        const isAuthenticated = await api.checkAuth();
         if (isAuthenticated) {
             console.log("App: Already authenticated.");
-            showFeedListView();
-            
-            isLoading = false;
-            
+            // Don't reset isLoading here, fetchAndDisplayFeeds will do it
             console.log("DEBUG: About to call fetchAndDisplayFeeds from checkAuthAndLoadView (isLoading reset)");
-            await fetchAndDisplayFeeds();
+            await fetchAndDisplayFeeds(); // Load feeds if authenticated
         } else {
-            console.log('App: Not authenticated.');
-            showLoginView();
+            console.log("App: Not authenticated.");
+            ui.showLoginView(); // Show login using ui module
             isLoading = false;
         }
     } catch (error) {
-        console.error('App: Error checking auth:', error);
-        showLoginView(); 
-        showLoginMessage('Error contacting server. Please try again later.', true);
+        console.error("App: Error checking auth:", error);
+        ui.showLoginView(); // Show login on error
         isLoading = false;
-    } 
+    }
 }
 
-/**
- * Handles the login form submission.
- * @param {Event} event The form submission event.
- */
-export async function handleLoginSubmit(event: Event): Promise<void> {
-    event.preventDefault();
+/** Handles the login form submission */
+async function handleLoginSubmit(): Promise<void> { // Removed event parameter
     if (isLoading) return;
 
-    // Fetch elements *inside* the handler to ensure they exist when called
-    const currentLoginForm = document.getElementById('login-form') as HTMLFormElement | null;
-    const currentUsernameInput = document.getElementById('username') as HTMLInputElement | null;
-    const currentPasswordInput = document.getElementById('password') as HTMLInputElement | null;
+    // Get credentials via the UI module
+    const credentials = ui.getLoginCredentials();
 
-    // Check if the form and its inputs were found *now*
-    if (!currentLoginForm || !currentUsernameInput || !currentPasswordInput) {
-        console.error("Login form or inputs not found when handling submit!");
-        showLoginMessage('An unexpected error occurred. Please try again.', true);
-        return; 
-    }
-
-    const username = currentUsernameInput.value.trim();
-    const password = currentPasswordInput.value;
-
-    if (!username || !password) {
-        showLoginMessage('Username and password are required.', true);
-        return;
+    if (!credentials) {
+        ui.showLoginMessage("Username and password are required.", true);
+        return; // Stop if input is invalid/missing
     }
 
     isLoading = true;
-    showLoginMessage('Logging in...');
-    setLoginButtonState(true);
+    ui.setLoginButtonState(true);
+    ui.showLoginMessage('Logging in...');
 
     try {
-        await apiLogin(username, password);
-        console.log('App: Login successful');
-        showLoginMessage('Success!', false);
-        showFeedListView();
-        
-        isLoading = false;
-
-        console.log("DEBUG: About to call fetchAndDisplayFeeds from handleLoginSubmit (isLoading reset)");
-        await fetchAndDisplayFeeds();
-    } catch (error) {
-        console.error('App: Login error:', error);
-        const errorMessage = (error instanceof Error) ? error.message : 'Login failed. Please check credentials.';
-        showLoginMessage(errorMessage, true);
-    } finally {
-        isLoading = false; 
-        setLoginButtonState(false);
-    }
+        await api.login(credentials.username, credentials.password);
+        ui.showLoginMessage('Login successful!', false);
+        // Don't reset isLoading here, fetchAndDisplayFeeds will do it
+        await fetchAndDisplayFeeds(); // Fetch feeds immediately after login
+    } catch (error: any) {
+        isLoading = false; // Reset loading state on error
+        console.error("App: Login error:", error);
+        const message = error.data?.message || error.message || 'Login failed.';
+        ui.showLoginMessage(message, true);
+        ui.setLoginButtonState(false);
+    } 
+    // No finally block needed for isLoading/button state here,
+    // as fetchAndDisplayFeeds handles it on success,
+    // and the catch block handles it on error.
 }
 
-/**
- * Fetches feeds using the API module and renders them using the UI module.
- */
-export async function fetchAndDisplayFeeds(): Promise<void> {
+/** Fetches feeds from the API and renders them in the UI */
+async function fetchAndDisplayFeeds(): Promise<void> {
     console.log("DEBUG: fetchAndDisplayFeeds called");
-    if (isLoading) {
-        console.log("DEBUG: fetchAndDisplayFeeds returning early (isLoading=true)");
-        return;
-    }
     isLoading = true;
-    showFeedMessage('Loading feeds...');
-    clearFeedDisplay();
+    ui.showFeedListView(); // Switch view first
+    ui.showFeedMessage('Loading feeds...');
+    ui.clearFeedDisplay();
 
     try {
         console.log("DEBUG: Calling api.getFeeds...");
-        const data = await apiGetFeeds(); 
-        console.log("DEBUG: api.getFeeds returned:", data);
+        // Explicitly type the expected response structure using imported types
+        const feedData: { feeds?: FeedMap, folders?: any[] } = await api.getFeeds();
+        console.log("DEBUG: api.getFeeds returned:", feedData);
 
-        const allFeedsMap = data.feeds || {};
-        let feedsArray: Feed[] = [];
-        if (data.folders && data.folders.length > 0) {
-             extractFeedsFromFolders(data.folders, allFeedsMap, feedsArray);
-        } else {
-            feedsArray = Object.values(allFeedsMap);
-        }
-
+        const feedsMap = feedData?.feeds;
+        // Ensure feedsArray is correctly typed as Feed[]
+        const feedsArray: Feed[] = feedsMap ? Object.values(feedsMap) : [];
         console.log(`DEBUG: Processing feeds. Resulting feedsArray: ${feedsArray.length} feeds`);
 
-        renderFeedList(feedsArray, handleFeedItemClick);
-        showFeedMessage('');
+        ui.renderFeedList(feedsArray);
 
-    } catch (error) {
-        console.error('DEBUG: Error in fetchAndDisplayFeeds:', error);
-        const errorMessage = (error instanceof Error) ? error.message : 'Unknown error';
-        showFeedMessage(`Error loading feeds: ${errorMessage}`, true);
+    } catch (error: any) {
+        console.error("DEBUG: Error in fetchAndDisplayFeeds:", error);
+        const message = error.data?.message || error.message || 'Failed to load feeds.';
+        ui.clearFeedDisplay(); // Clear partial list if any
+        ui.showFeedMessage(message, true);
     } finally {
         isLoading = false;
         console.log("DEBUG: fetchAndDisplayFeeds finished (isLoading=false)");
     }
 }
 
-/**
- * Handles clicking on a feed item.
- * (Placeholder for future functionality)
- * @param {string|number} feedId The ID of the clicked feed.
- */
-export function handleFeedItemClick(feedId: string | number): void {
+/** Handles clicking the logout button */
+async function handleLogout(): Promise<void> {
+    if (isLoading) return;
+    isLoading = true;
+    console.log("App: Logging out...");
+    try {
+        await api.logout();
+        console.log("App: Logout successful.");
+    } catch (error) {
+        // Log the error but proceed to show login view anyway
+        console.error("App: Logout API call failed:", error);
+    } finally {
+        isLoading = false;
+        ui.showLoginView(); // Always show login view after logout attempt
+    }
+}
+
+/** Handles clicking on a specific feed item */
+function handleFeedItemClick(feedId: string | number): void {
     if (isLoading) return;
     console.log(`App: Feed item clicked: ${feedId}`);
-    showFeedMessage(`Selected Feed ID: ${feedId}`);
-}
-
-/**
- * Handles the logout button click.
- */
-export async function handleLogout(): Promise<void> {
-    if (isLoading) return;
-    console.log('App: Logging out...');
-    isLoading = true;
-
-    try {
-        await apiLogout();
-        console.log('App: Logout successful.');
-    } catch (error) {
-        console.error('App: Logout API call failed:', error);
-    } finally {
-        showLoginView();
-        isLoading = false;
-    }
-}
-
-/**
- * Sets up event listeners and performs the initial auth check.
- * This should be called once the DOM is ready.
- */
-export async function initializeApp(): Promise<void> {
-    console.log('App: Initializing...');
-
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLoginSubmit);
-    }
-    if (logoutButton) {
-        logoutButton.addEventListener('click', handleLogout);
-    }
-
-    await checkAuthAndLoadView();
-    console.log('App: Initialization complete.');
+    // TODO: Implement actual story loading/display logic
+    ui.showFeedMessage(`Selected Feed ID: ${feedId}. Story loading not implemented yet.`);
 }
 
 // --- Initialization ---
 
-document.addEventListener('DOMContentLoaded', initializeApp);
+function initializeApp(): void {
+    console.log("App: Initializing...");
+
+    // Register the click handler with the UI module first
+    ui.setFeedItemClickHandler(handleFeedItemClick);
+
+    // Initialize the UI, passing the handlers for form/button events
+    ui.initializeUI({
+        onLoginSubmit: handleLoginSubmit, // Pass the function reference
+        onLogoutClick: handleLogout       // Pass the function reference
+    });
+
+    // Initial check to see if user is already logged in
+    checkAuthAndLoadView();
+}
+
+// Start the application
+initializeApp();

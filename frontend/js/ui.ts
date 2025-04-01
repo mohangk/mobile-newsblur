@@ -1,5 +1,27 @@
 // frontend/js/ui.ts
-import type { Feed } from './api'; // Import Feed type
+import type { Feed } from './types'; // Import Feed type FROM ./types
+
+// --- Types ---
+interface LoginCredentials {
+    username: string;
+    password: string;
+}
+
+interface AppHandlers {
+    onLoginSubmit: () => Promise<void>; // Expecting async handler
+    onLogoutClick: () => void;
+}
+
+type FeedItemClickHandler = (feedId: string | number) => void;
+
+// --- State ---
+let feedItemClickHandler: FeedItemClickHandler | null = null;
+
+// --- Internal Helper ---
+/** Generic helper to get typed elements by ID */
+function getElement<T extends HTMLElement>(id: string): T | null {
+    return document.getElementById(id) as T | null;
+}
 
 // --- HTML Element ID Reference ---
 // This file interacts with the following element IDs in index.html:
@@ -39,29 +61,29 @@ function setVisibility(element: HTMLElement | null, visible: boolean): void {
 
 /** Show the login view and hide the feed list view */
 export function showLoginView(): void {
-    // Use specific types and handle potential nulls
-    const loginView = document.getElementById('login-view') as HTMLDivElement | null;
-    const feedListView = document.getElementById('feed-list-view') as HTMLDivElement | null;
-    const feedListElement = document.getElementById('feed-list') as HTMLUListElement | null;
-    const feedMessageArea = document.getElementById('feed-message-area') as HTMLParagraphElement | null;
-    const loginMessageArea = document.getElementById('login-message-area') as HTMLParagraphElement | null;
+    // Use specific types and handle potential nulls via helper
+    const loginView = getElement<HTMLDivElement>('login-view');
+    const feedListView = getElement<HTMLDivElement>('feed-list-view');
+    const feedListElement = getElement<HTMLUListElement>('feed-list');
+    const feedMessageArea = getElement<HTMLParagraphElement>('feed-message-area');
+    const loginMessageArea = getElement<HTMLParagraphElement>('login-message-area');
 
     setVisibility(loginView, true);
     setVisibility(feedListView, false);
     // Clear dynamic content when switching views
     if (feedListElement) feedListElement.innerHTML = '';
     if (feedMessageArea) feedMessageArea.textContent = '';
-    if (loginMessageArea) loginMessageArea.textContent = ''; 
+    if (loginMessageArea) loginMessageArea.textContent = '';
 }
 
 /** Show the feed list view and hide the login view */
 export function showFeedListView(): void {
-    const loginView = document.getElementById('login-view') as HTMLDivElement | null;
-    const feedListView = document.getElementById('feed-list-view') as HTMLDivElement | null;
-    const loginMessageArea = document.getElementById('login-message-area') as HTMLParagraphElement | null;
-    const passwordInput = document.getElementById('password') as HTMLInputElement | null;
-    const usernameInput = document.getElementById('username') as HTMLInputElement | null;
-    const loginButton = document.getElementById('login-button') as HTMLButtonElement | null;
+    const loginView = getElement<HTMLDivElement>('login-view');
+    const feedListView = getElement<HTMLDivElement>('feed-list-view');
+    const loginMessageArea = getElement<HTMLParagraphElement>('login-message-area');
+    const passwordInput = getElement<HTMLInputElement>('password');
+    const usernameInput = getElement<HTMLInputElement>('username');
+    const loginButton = getElement<HTMLButtonElement>('login-button');
 
     setVisibility(loginView, false);
     setVisibility(feedListView, true);
@@ -69,12 +91,12 @@ export function showFeedListView(): void {
     if (loginMessageArea) loginMessageArea.textContent = '';
     if (passwordInput) passwordInput.value = '';
     if (usernameInput) usernameInput.value = '';
-    if (loginButton) loginButton.disabled = false; 
+    if (loginButton) loginButton.disabled = false;
 }
 
 /** Displays a message in the login message area */
 export function showLoginMessage(message: string, isError: boolean = false): void {
-    const loginMessageArea = document.getElementById('login-message-area') as HTMLParagraphElement | null;
+    const loginMessageArea = getElement<HTMLParagraphElement>('login-message-area');
     if (!loginMessageArea) return;
     loginMessageArea.textContent = message;
     loginMessageArea.className = `text-xs italic h-4 ${isError ? 'text-red-500' : 'text-green-600'}`;
@@ -82,7 +104,7 @@ export function showLoginMessage(message: string, isError: boolean = false): voi
 
 /** Displays a message in the feed list message area */
 export function showFeedMessage(message: string, isError: boolean = false): void {
-    const feedMessageArea = document.getElementById('feed-message-area') as HTMLParagraphElement | null;
+    const feedMessageArea = getElement<HTMLParagraphElement>('feed-message-area');
     if (!feedMessageArea) return;
     feedMessageArea.textContent = message;
     feedMessageArea.className = `text-center mb-4 h-5 ${isError ? 'text-red-600 font-semibold' : 'text-gray-500 dark:text-gray-400'}`;
@@ -90,33 +112,66 @@ export function showFeedMessage(message: string, isError: boolean = false): void
 
 /** Clears the feed list and feed message area */
 export function clearFeedDisplay(): void {
-     const feedListElement = document.getElementById('feed-list') as HTMLUListElement | null;
-     const feedMessageArea = document.getElementById('feed-message-area') as HTMLParagraphElement | null;
+     const feedListElement = getElement<HTMLUListElement>('feed-list');
+     const feedMessageArea = getElement<HTMLParagraphElement>('feed-message-area');
      if (feedListElement) feedListElement.innerHTML = '';
      if (feedMessageArea) feedMessageArea.textContent = '';
 }
 
 /** Disables or enables the login button */
 export function setLoginButtonState(disabled: boolean): void {
-     const loginButton = document.getElementById('login-button') as HTMLButtonElement | null;
+     const loginButton = getElement<HTMLButtonElement>('login-button');
      // Use optional chaining for potentially null button
      if (loginButton) loginButton.disabled = disabled;
 }
 
-/** Function type for the feed item click handler */
-type FeedItemClickHandler = (feedId: string | number) => void;
+// --- NEW Functions for App Interaction ---
+
+/** Gets username and password from the input fields */
+export function getLoginCredentials(): LoginCredentials | null {
+    const usernameInput = getElement<HTMLInputElement>('username');
+    const passwordInput = getElement<HTMLInputElement>('password');
+    const username = usernameInput?.value.trim();
+    const password = passwordInput?.value; // Don't trim password
+
+    // Return null if either is missing/empty to signal invalid input
+    if (!username || !password) {
+        return null;
+    }
+    return { username, password };
+}
+
+/** Sets the function to be called when a feed item is clicked */
+export function setFeedItemClickHandler(handler: FeedItemClickHandler): void {
+    feedItemClickHandler = handler;
+}
+
+/** Initializes UI elements and attaches primary event listeners handled by app.ts */
+export function initializeUI(handlers: AppHandlers): void {
+    const loginForm = getElement<HTMLFormElement>('login-form');
+    const logoutButton = getElement<HTMLButtonElement>('logout-button');
+
+    loginForm?.addEventListener('submit', (event) => {
+        event.preventDefault(); // Prevent default form submission
+        handlers.onLoginSubmit(); // Call the async handler from app.ts
+    });
+
+    logoutButton?.addEventListener('click', handlers.onLogoutClick);
+
+    // Any other one-time UI setup could go here
+    console.log('UI Initialized with handlers.');
+}
 
 /**
  * Renders the list of feeds in the UI.
  * @param {Array<Feed> | null | undefined} feeds - Array of feed objects to render.
- * @param {FeedItemClickHandler} onItemClick - Callback function when a feed item is clicked.
  */
-export function renderFeedList(feeds: Feed[] | null | undefined, onItemClick: FeedItemClickHandler): void {
+export function renderFeedList(feeds: Feed[] | null | undefined): void {
     console.log("DEBUG: renderFeedList called with feeds:", feeds);
-    const feedListElement = document.getElementById('feed-list') as HTMLUListElement | null;
+    const feedListElement = getElement<HTMLUListElement>('feed-list');
     if (!feedListElement) return;
 
-    clearFeedDisplay(); 
+    clearFeedDisplay();
 
     if (!feeds || feeds.length === 0) {
         showFeedMessage('No feeds found. Add some on NewsBlur!');
@@ -124,11 +179,10 @@ export function renderFeedList(feeds: Feed[] | null | undefined, onItemClick: Fe
     }
 
     // Create and append list items
-    feeds.forEach((feed: Feed) => { // Add type to feed parameter
+    feeds.forEach((feed: Feed) => {
         const listItem = document.createElement('li') as HTMLLIElement;
         listItem.className = 'flex items-center py-3 px-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0';
-        // Use String() as dataset properties expect strings
-        listItem.dataset.feedId = String(feed.id); 
+        listItem.dataset.feedId = String(feed.id);
 
         // Calculate unread count safely, defaulting to 0
         const unreadCount = (feed.ps ?? 0) + (feed.nt ?? 0) + (feed.ng ?? 0);
@@ -158,10 +212,22 @@ export function renderFeedList(feeds: Feed[] | null | undefined, onItemClick: Fe
             listItem.appendChild(countSpan);
         }
 
-        listItem.addEventListener('click', () => onItemClick(feed.id));
+        // Use the stored click handler
+        if (feedItemClickHandler) {
+             listItem.addEventListener('click', () => {
+                if (feedItemClickHandler) { // Double-check handler exists before calling
+                    feedItemClickHandler(feed.id);
+                }
+            });
+        } else {
+            console.warn('Feed item click handler not set!');
+        }
 
         feedListElement.appendChild(listItem);
     });
+
+    // Clear the loading message now that feeds have been rendered
+    showFeedMessage('');
 }
 
 // Add other UI-related functions as needed (e.g., renderFeedItems, renderStory)

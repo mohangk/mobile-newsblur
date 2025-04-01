@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
 import {
     showLoginView,
     showFeedListView,
@@ -6,8 +6,26 @@ import {
     showFeedMessage,
     setLoginButtonState,
     renderFeedList,
-    clearFeedDisplay
+    clearFeedDisplay,
+    setFeedItemClickHandler
 } from './ui'; // Adjust path as necessary
+import type { Feed } from './types'; // Import Feed type if needed for mocks
+
+// Helper function to assert element exists and return it typed
+function expectElement<T extends HTMLElement>(selector: string): T {
+    const element = document.querySelector(selector) as T | null;
+    if (!element) {
+        throw new Error(`Test setup error: Element with selector "${selector}" not found.`);
+    }
+    return element;
+}
+function expectElementById<T extends HTMLElement>(id: string): T {
+    const element = document.getElementById(id) as T | null;
+    if (!element) {
+        throw new Error(`Test setup error: Element with ID "${id}" not found.`);
+    }
+    return element;
+}
 
 // --- Mock DOM Setup ---
 // Create basic DOM structure needed for the UI functions before each test
@@ -59,46 +77,58 @@ describe('UI Functions', () => {
     describe('showLoginView', () => {
         it('should show login view and hide feed list view', () => {
             // Start with feed list visible (simulating logged-in state)
-            document.getElementById('login-view').classList.add('hidden');
-            document.getElementById('feed-list-view').classList.remove('hidden');
-            document.getElementById('feed-list').innerHTML = '<li>Some Feed</li>'; // Add dummy content
-            document.getElementById('feed-message-area').textContent = 'Some message';
-            document.getElementById('login-message-area').textContent = 'Some other message';
+            const loginView = expectElementById<HTMLDivElement>('login-view');
+            const feedListView = expectElementById<HTMLDivElement>('feed-list-view');
+            const feedList = expectElementById<HTMLUListElement>('feed-list');
+            const feedMessageArea = expectElementById<HTMLParagraphElement>('feed-message-area');
+            const loginMessageArea = expectElementById<HTMLParagraphElement>('login-message-area');
+
+            loginView.classList.add('hidden');
+            feedListView.classList.remove('hidden');
+            feedList.innerHTML = '<li>Some Feed</li>'; // Add dummy content
+            feedMessageArea.textContent = 'Some message';
+            loginMessageArea.textContent = 'Some other message';
 
             showLoginView();
 
-            expect(document.getElementById('login-view').classList.contains('hidden')).toBe(false);
-            expect(document.getElementById('feed-list-view').classList.contains('hidden')).toBe(true);
+            expect(loginView.classList.contains('hidden')).toBe(false);
+            expect(feedListView.classList.contains('hidden')).toBe(true);
             // Check that dynamic content was cleared
-            expect(document.getElementById('feed-list').innerHTML).toBe('');
-            expect(document.getElementById('feed-message-area').textContent).toBe('');
-            expect(document.getElementById('login-message-area').textContent).toBe('');
+            expect(feedList.innerHTML).toBe('');
+            expect(feedMessageArea.textContent).toBe('');
+            expect(loginMessageArea.textContent).toBe('');
         });
     });
 
     describe('showFeedListView', () => {
         it('should show feed list view and hide login view', () => {
             // Start with login view visible (default state)
-            document.getElementById('login-message-area').textContent = 'Error!';
-            document.getElementById('password').value = 'secret';
-            document.getElementById('login-button').disabled = true;
+            const loginMessageArea = expectElementById<HTMLParagraphElement>('login-message-area');
+            const passwordInput = expectElementById<HTMLInputElement>('password');
+            const loginButton = expectElementById<HTMLButtonElement>('login-button');
+            const loginView = expectElementById<HTMLDivElement>('login-view');
+            const feedListView = expectElementById<HTMLDivElement>('feed-list-view');
+
+            loginMessageArea.textContent = 'Error!';
+            passwordInput.value = 'secret';
+            loginButton.disabled = true;
 
             showFeedListView();
 
-            expect(document.getElementById('login-view').classList.contains('hidden')).toBe(true);
-            expect(document.getElementById('feed-list-view').classList.contains('hidden')).toBe(false);
+            expect(loginView.classList.contains('hidden')).toBe(true);
+            expect(feedListView.classList.contains('hidden')).toBe(false);
             // Check that login form state was cleared/reset
-            expect(document.getElementById('login-message-area').textContent).toBe('');
-            expect(document.getElementById('password').value).toBe('');
-            // expect(document.getElementById('username').value).toBe(''); // Username might be kept
-            expect(document.getElementById('login-button').disabled).toBe(false);
+            expect(loginMessageArea.textContent).toBe('');
+            expect(passwordInput.value).toBe('');
+            // expect(expectElementById<HTMLInputElement>('username').value).toBe(''); // Username might be kept
+            expect(loginButton.disabled).toBe(false);
         });
     });
 
     describe('showLoginMessage', () => {
         it('should display a message in the login message area', () => {
             showLoginMessage('Login successful');
-            const msgArea = document.getElementById('login-message-area');
+            const msgArea = expectElementById<HTMLParagraphElement>('login-message-area');
             expect(msgArea.textContent).toBe('Login successful');
             expect(msgArea.classList.contains('text-red-500')).toBe(false);
             expect(msgArea.classList.contains('text-green-600')).toBe(true);
@@ -106,7 +136,7 @@ describe('UI Functions', () => {
 
         it('should display an error message with error styling', () => {
             showLoginMessage('Invalid credentials', true);
-            const msgArea = document.getElementById('login-message-area');
+            const msgArea = expectElementById<HTMLParagraphElement>('login-message-area');
             expect(msgArea.textContent).toBe('Invalid credentials');
             expect(msgArea.classList.contains('text-red-500')).toBe(true);
             expect(msgArea.classList.contains('text-green-600')).toBe(false);
@@ -116,7 +146,7 @@ describe('UI Functions', () => {
      describe('showFeedMessage', () => {
         it('should display a message in the feed message area', () => {
             showFeedMessage('Loading feeds...');
-            const msgArea = document.getElementById('feed-message-area');
+            const msgArea = expectElementById<HTMLParagraphElement>('feed-message-area');
             expect(msgArea.textContent).toBe('Loading feeds...');
             expect(msgArea.classList.contains('text-red-600')).toBe(false);
             expect(msgArea.classList.contains('text-gray-500')).toBe(true); // Check default style
@@ -124,7 +154,7 @@ describe('UI Functions', () => {
 
         it('should display an error message with error styling', () => {
             showFeedMessage('Failed to load feeds', true);
-            const msgArea = document.getElementById('feed-message-area');
+            const msgArea = expectElementById<HTMLParagraphElement>('feed-message-area');
             expect(msgArea.textContent).toBe('Failed to load feeds');
             expect(msgArea.classList.contains('text-red-600')).toBe(true);
              expect(msgArea.classList.contains('font-semibold')).toBe(true);
@@ -134,64 +164,86 @@ describe('UI Functions', () => {
     describe('setLoginButtonState', () => {
         it('should disable the login button', () => {
             setLoginButtonState(true);
-            expect(document.getElementById('login-button').disabled).toBe(true);
+            expect(expectElementById<HTMLButtonElement>('login-button').disabled).toBe(true);
         });
 
         it('should enable the login button', () => {
-            document.getElementById('login-button').disabled = true; // Start disabled
+            const loginButton = expectElementById<HTMLButtonElement>('login-button');
+            loginButton.disabled = true; // Start disabled
             setLoginButtonState(false);
-            expect(document.getElementById('login-button').disabled).toBe(false);
+            expect(loginButton.disabled).toBe(false);
         });
     });
 
     describe('clearFeedDisplay', () => {
         it('should clear the feed list and message area', () => {
-            document.getElementById('feed-list').innerHTML = '<li>Feed</li>';
-            document.getElementById('feed-message-area').textContent = 'Message';
+            const feedList = expectElementById<HTMLUListElement>('feed-list');
+            const feedMessageArea = expectElementById<HTMLParagraphElement>('feed-message-area');
+            feedList.innerHTML = '<li>Feed</li>';
+            feedMessageArea.textContent = 'Message';
             clearFeedDisplay();
-            expect(document.getElementById('feed-list').innerHTML).toBe('');
-            expect(document.getElementById('feed-message-area').textContent).toBe('');
+            expect(feedList.innerHTML).toBe('');
+            expect(feedMessageArea.textContent).toBe('');
         });
     });
 
     describe('renderFeedList', () => {
-        const mockFeeds = [
+        // Use Feed type for mock data consistency
+        const mockFeeds: Feed[] = [
             { id: 1, feed_title: 'Tech Blog', favicon_url: 'tech.png', ps: 5, nt: 2, ng: 0 }, // 7 unread
-            { id: 2, feed_title: 'News Site', ps: 0, nt: 0, ng: 0 }, // 0 unread
-            { id: 3, feed_title: 'Comic', favicon_url: null, ps: 1, nt: 0, ng: 0 }, // 1 unread, no favicon
+            { id: 2, feed_title: 'News Site', favicon_url:'', ps: 0, nt: 0, ng: 0 }, // 0 unread, empty favicon_url
+            { id: 3, feed_title: 'Comic', favicon_url: null, ps: 1, nt: 0, ng: 0 }, // 1 unread, null favicon
         ];
-        const mockClickHandler = vi.fn();
+        let mockClickHandler: Mock;
 
         beforeEach(() => {
-            mockClickHandler.mockClear(); // Reset mock before each test in this suite
+            // Create mock click handler
+            mockClickHandler = vi.fn();
+            // Reset the internal click handler in ui.ts before each test
+            // by passing a no-op function to satisfy the type
+            setFeedItemClickHandler(() => {}); // Pass dummy function instead of null
         });
 
         it('should render a list of feeds with titles and favicons', () => {
-            renderFeedList(mockFeeds, mockClickHandler);
+            setFeedItemClickHandler(mockClickHandler); // Set handler first
+            renderFeedList(mockFeeds); // Call with only feeds
             const listItems = document.querySelectorAll('#feed-list li');
             expect(listItems.length).toBe(3);
 
             // Check first item
-            const firstItem = listItems[0];
-            expect(firstItem.querySelector('span').textContent).toBe('Tech Blog');
-            expect(firstItem.querySelector('img').src).toContain('tech.png');
+            const firstItem = listItems[0] as HTMLLIElement;
+            const firstItemSpan = expectElement<HTMLSpanElement>('#feed-list li:first-child span');
+            const firstItemImg = expectElement<HTMLImageElement>('#feed-list li:first-child img');
+            expect(firstItemSpan.textContent).toBe('Tech Blog');
+            expect(firstItemImg.src).toContain('tech.png');
             expect(firstItem.dataset.feedId).toBe('1');
 
-             // Check third item (no favicon, check fallback)
-             const thirdItem = listItems[2];
-             expect(thirdItem.querySelector('span').textContent).toBe('Comic');
-             expect(thirdItem.querySelector('img').src).toContain('data:image/gif;base64'); // Placeholder
+            // Check second item (empty string favicon_url, check fallback)
+             const secondItem = listItems[1] as HTMLLIElement;
+             const secondItemSpan = expectElement<HTMLSpanElement>('#feed-list li:nth-child(2) span');
+             const secondItemImg = expectElement<HTMLImageElement>('#feed-list li:nth-child(2) img');
+             expect(secondItemSpan.textContent).toBe('News Site');
+             expect(secondItemImg.src).toContain('data:image/gif;base64'); // Placeholder
+             expect(secondItem.dataset.feedId).toBe('2');
+
+             // Check third item (null favicon, check fallback)
+             const thirdItem = listItems[2] as HTMLLIElement;
+             const thirdItemSpan = expectElement<HTMLSpanElement>('#feed-list li:nth-child(3) span');
+             const thirdItemImg = expectElement<HTMLImageElement>('#feed-list li:nth-child(3) img');
+             expect(thirdItemSpan.textContent).toBe('Comic');
+             expect(thirdItemImg.src).toContain('data:image/gif;base64'); // Placeholder
              expect(thirdItem.dataset.feedId).toBe('3');
         });
 
         it('should display unread counts', () => {
-            renderFeedList(mockFeeds, mockClickHandler);
+            setFeedItemClickHandler(mockClickHandler);
+            renderFeedList(mockFeeds);
             const listItems = document.querySelectorAll('#feed-list li');
 
             // First item (7 unread)
             const firstItemCount = listItems[0].querySelector('span.bg-blue-600');
             expect(firstItemCount).not.toBeNull();
-            expect(firstItemCount.textContent).toBe('7');
+            expect(firstItemCount!.textContent).toBe('7');
 
             // Second item (0 unread)
             const secondItemCount = listItems[1].querySelector('span.bg-blue-600');
@@ -200,57 +252,67 @@ describe('UI Functions', () => {
             // Third item (1 unread)
             const thirdItemCount = listItems[2].querySelector('span.bg-blue-600');
             expect(thirdItemCount).not.toBeNull();
-            expect(thirdItemCount.textContent).toBe('1');
+            expect(thirdItemCount!.textContent).toBe('1');
         });
 
          it('should attach click handlers to list items', () => {
-            renderFeedList(mockFeeds, mockClickHandler);
+            setFeedItemClickHandler(mockClickHandler);
+            renderFeedList(mockFeeds);
             const listItems = document.querySelectorAll('#feed-list li');
 
-            // Simulate click on the first item
-            listItems[0].click();
+            // Simulate click on the first item (cast to HTMLLIElement)
+            (listItems[0] as HTMLLIElement).click();
             expect(mockClickHandler).toHaveBeenCalledTimes(1);
             expect(mockClickHandler).toHaveBeenCalledWith(1); // Feed ID 1
 
-            // Simulate click on the third item
-            listItems[2].click();
+            // Simulate click on the third item (cast to HTMLLIElement)
+            (listItems[2] as HTMLLIElement).click();
             expect(mockClickHandler).toHaveBeenCalledTimes(2);
             expect(mockClickHandler).toHaveBeenCalledWith(3); // Feed ID 3
         });
 
         it('should clear previous content before rendering', () => {
-            document.getElementById('feed-list').innerHTML = '<li>Old Item</li>';
-            document.getElementById('feed-message-area').textContent = 'Old message';
-            renderFeedList(mockFeeds.slice(0, 1), mockClickHandler); // Render just one feed
+            const feedList = expectElementById<HTMLUListElement>('feed-list');
+            const feedMessageArea = expectElementById<HTMLParagraphElement>('feed-message-area');
+            feedList.innerHTML = '<li>Old Item</li>';
+            feedMessageArea.textContent = 'Old message';
+
+            setFeedItemClickHandler(mockClickHandler);
+            renderFeedList(mockFeeds.slice(0, 1)); // Render just one feed
 
             expect(document.querySelectorAll('#feed-list li').length).toBe(1);
-            expect(document.getElementById('feed-message-area').textContent).toBe(''); // Message should be cleared
-            expect(document.querySelector('#feed-list li span').textContent).toBe('Tech Blog');
+            expect(feedMessageArea.textContent).toBe(''); // Message should be cleared
+            const firstItemSpan = expectElement<HTMLSpanElement>('#feed-list li:first-child span');
+            expect(firstItemSpan.textContent).toBe('Tech Blog');
         });
 
          it('should display a message if no feeds are provided', () => {
-            renderFeedList([], mockClickHandler);
+            setFeedItemClickHandler(mockClickHandler);
+            renderFeedList([]);
             expect(document.querySelectorAll('#feed-list li').length).toBe(0);
-            expect(document.getElementById('feed-message-area').textContent).toBe('No feeds found. Add some on NewsBlur!');
+            const feedMessageArea = expectElementById<HTMLParagraphElement>('feed-message-area');
+            expect(feedMessageArea.textContent).toBe('No feeds found. Add some on NewsBlur!');
         });
 
         it('should display a message if feeds array is null or undefined', () => {
-            renderFeedList(null, mockClickHandler);
+            const feedMessageArea = expectElementById<HTMLParagraphElement>('feed-message-area');
+
+            setFeedItemClickHandler(mockClickHandler);
+            renderFeedList(null);
             expect(document.querySelectorAll('#feed-list li').length).toBe(0);
-            expect(document.getElementById('feed-message-area').textContent).toBe('No feeds found. Add some on NewsBlur!');
+            expect(feedMessageArea.textContent).toBe('No feeds found. Add some on NewsBlur!');
 
-             document.getElementById('feed-message-area').textContent = ''; // Reset for next check
+            feedMessageArea.textContent = ''; // Reset for next check
 
-             renderFeedList(undefined, mockClickHandler);
+             renderFeedList(undefined);
              expect(document.querySelectorAll('#feed-list li').length).toBe(0);
-             expect(document.getElementById('feed-message-area').textContent).toBe('No feeds found. Add some on NewsBlur!');
+             expect(feedMessageArea.textContent).toBe('No feeds found. Add some on NewsBlur!');
         });
 
-        // Test edge case for favicon error handling (difficult to test precisely without image loading)
-        // We rely on the onerror attribute being set correctly
          it('should set onerror handler for favicons', () => {
-             renderFeedList(mockFeeds.slice(0,1), mockClickHandler);
-             const img = document.querySelector('#feed-list li img');
+             setFeedItemClickHandler(mockClickHandler);
+             renderFeedList(mockFeeds.slice(0,1));
+             const img = expectElement<HTMLImageElement>('#feed-list li img');
              expect(img.onerror).toBeInstanceOf(Function);
          });
     });

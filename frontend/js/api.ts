@@ -1,63 +1,29 @@
 // frontend/js/api.ts
 // Define types directly here for now, or create a types.ts file later
 
-// --- Basic Response Structures (can be expanded) ---
-interface BaseResponse {
-    authenticated?: boolean;
-    message?: string;
-    errors?: Record<string, string[]>; // e.g., { "__all__": ["Error message"] }
-}
+// Import shared types from the new types file
+import type {
+    BaseResponse,
+    ApiError,
+    FeedResponse,
+    Story, // Add back Story as it IS used directly
+    StoryResponse
+} from './types';
 
-export interface LoginResponse extends BaseResponse {
+// --- API Configuration ---
+const BASE_URL = 'http://localhost:8787'; 
+
+// --- Type Definitions (Keep API-specific ones here) ---
+
+/** Structure specific to the /api/login response */
+interface LoginResponse extends BaseResponse {
     authenticated: boolean; 
 }
 
-export interface LogoutResponse extends BaseResponse {}
-
-export interface Feed {
-    id: string | number;
-    feed_title: string;
-    favicon_url?: string | null;
-    ps?: number; // Positive score count
-    nt?: number; // Neutral score count
-    ng?: number; // Negative score count
-    // ... other feed properties from NewsBlur API
-}
-
-export type FeedMap = Record<string, Feed>;
-
-export interface FeedResponse extends BaseResponse {
-    feeds: FeedMap;
-    folders: any[]; // Define folder structure later if needed
-}
-
-export interface Story {
-    id: string; // NewsBlur story IDs are strings
-    story_title: string;
-    story_content: string;
-    story_permalink: string;
-    story_feed_id: number;
-    story_date: string; // ISO 8601 format string
-    read_status: 0 | 1; // 0 = unread, 1 = read
-    starred: boolean;
-    story_authors: string;
-    story_tags: string[];
-    // ... other story properties
-}
-
-export type StoryMap = Record<string, Story>;
-
-export interface StoryResponse extends BaseResponse {
-    stories: StoryMap;
-}
+/** Structure specific to the /api/logout response */
+interface LogoutResponse extends BaseResponse {}
 
 // --- Helper: apiFetch ---
-const BASE_URL = 'http://localhost:8787'; 
-
-export interface ApiError extends Error {
-    status?: number;
-    data?: BaseResponse; // Use BaseResponse for potential error data
-}
 
 /**
  * Base fetch function for API calls.
@@ -66,7 +32,7 @@ export interface ApiError extends Error {
  * @returns {Promise<any>} - A promise that resolves to the parsed JSON response.
  * @throws {ApiError} - Throws an error with status and message if the API call fails.
  */
-export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<any> { // Keep return type as `any` for now, specific functions will type it
+async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${BASE_URL}/proxy${endpoint}`; 
     const defaultOptions: RequestInit = {
         credentials: 'include', 
@@ -91,7 +57,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
         const response = await fetch(url, fetchOptions);
 
         if (!response.ok) {
-            let errorData: BaseResponse | null = null; // Use BaseResponse type
+            let errorData: BaseResponse | any = null;
             let errorMessage = `HTTP error ${response.status}`;
             try {
                 errorData = await response.json();
@@ -105,39 +71,38 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
                 errorMessage = errorMessage || `HTTP error ${response.status}: Failed to parse error body.`;
             }
 
-            const error: ApiError = new Error(errorMessage);
+            const error: ApiError = new Error(errorMessage) as ApiError;
             error.status = response.status;
-            error.data = errorData ?? undefined; // Assign errorData or undefined
-            console.error("API Error Data:", errorData);
+            error.data = errorData;
+            console.error('API Error Data:', error.data); // Log data for debugging
             throw error;
         }
 
         if (response.status === 204) {
-            return {}; 
+            return {} as T; 
         }
         
-        return await response.json();
-    } catch (error) {
+        return await response.json() as T;
+    } catch (error: unknown) {
         console.error(`API: Network or other error fetching ${url}:`, error);
+        // Re-throw as ApiError or a generic error if it's not already one
         if (error instanceof Error && 'status' in error) {
-            throw error; 
-        } else if (error instanceof Error) {
-             const networkError: ApiError = new Error(`Network error: ${error.message}`);
-             networkError.status = undefined; 
-             throw networkError; 
-        } else {
-            throw new Error(`An unknown error occurred: ${error}`);
+            throw error; // It's already our ApiError or similar
         }
+        const genericError: ApiError = new Error('Network error or unexpected issue') as ApiError;
+        genericError.data = { message: (error instanceof Error) ? error.message : String(error) };
+        throw genericError;
     }
 }
 
 // --- API Functions ---
 
-export async function login(username: string, password: string): Promise<LoginResponse> {
+/** Performs user login */
+export async function login(username: string, password?: string): Promise<LoginResponse> {
     console.log('API: Attempting login...');
     const body = new URLSearchParams();
     body.append('username', username);
-    body.append('password', password);
+    body.append('password', password || '');
 
     const options: RequestInit = {
         method: 'POST',
@@ -146,31 +111,33 @@ export async function login(username: string, password: string): Promise<LoginRe
     };
 
     // Use type assertion as apiFetch returns Promise<any>
-    const data = await apiFetch('/api/login', options) as LoginResponse; 
+    const data = await apiFetch<LoginResponse>(`/api/login`, options); 
     console.log('API: Login response:', data);
     if (!data.authenticated) {
-        const error: ApiError = new Error(data.errors?.__all__?.join(', ') || 'Invalid credentials.');
-        error.status = 401; 
-        error.data = data;
-        throw error;
+        // Access optional message from BaseResponse structure
+        const errorMessage = (data as BaseResponse).message || 'Login failed due to unknown reasons.';
+        throw new Error(errorMessage);
     }
     return data;
 }
 
+/** Performs user logout */
 export async function logout(): Promise<LogoutResponse> {
     console.log('API: Logging out...');
-    const data = await apiFetch('/api/logout', { method: 'POST' }) as LogoutResponse;
+    const data = await apiFetch<LogoutResponse>(`/api/logout`, { method: 'POST' });
     console.log('API: Logout response:', data);
     return data;
 }
 
+/** Fetches the list of feeds and folders */
 export async function getFeeds(): Promise<FeedResponse> {
     console.log('API: Fetching feeds...');
-    const data = await apiFetch('/reader/feeds?include_favicons=true') as FeedResponse;
+    const data = await apiFetch<FeedResponse>(`/reader/feeds?include_favicons=true`);
     console.log('API: Received feeds:', Object.keys(data.feeds || {}).length);
     return data;
 }
 
+/** Checks if the user is currently authenticated */
 export async function checkAuth(): Promise<boolean> {
     console.log('API: Checking auth status...');
     try {
@@ -187,16 +154,22 @@ export async function checkAuth(): Promise<boolean> {
     }
 }
 
-// Return Story[] instead of StoryMap for easier sorting/handling
-export async function getStoriesForFeed(feedId: string | number | null): Promise<Story[]> { // Allow null for test validation
+/** Fetches stories for a specific feed */
+export async function getStoriesForFeed(feedId: string | number): Promise<Story[]> {
     if (!feedId) {
         throw new Error("Feed ID is required to fetch stories.");
     }
     console.log(`API: Fetching stories for feed ${feedId}...`);
-    const data = await apiFetch(`/reader/feed/${feedId}`) as StoryResponse;
+    const data = await apiFetch<StoryResponse>(`/reader/feed/${feedId}`);
     const storiesMap = data.stories || {};
     const storiesArray = Object.values(storiesMap);
+    // Sort by date descending (newest first)
+    storiesArray.sort((a: Story, b: Story) => { // Explicitly type a and b
+        // Handle potential undefined or null dates if necessary, though API should provide them
+        const dateA = new Date(a.story_date).getTime();
+        const dateB = new Date(b.story_date).getTime();
+        return dateB - dateA; // Descending order
+    });
     console.log(`API: Received stories for feed ${feedId}:`, storiesArray.length);
-    storiesArray.sort((a, b) => new Date(b.story_date).getTime() - new Date(a.story_date).getTime());
     return storiesArray;
 }

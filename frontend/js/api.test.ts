@@ -121,7 +121,7 @@ describe('API Functions', () => {
 
         it('should throw error on getFeeds network error', async () => {
              vi.mocked(globalThis.fetch).mockRejectedValue(new Error('Net Fail'));
-             await expect(getFeeds()).rejects.toThrow('Net Fail');
+             await expect(getFeeds()).rejects.toThrow('Network error or unexpected issue');
         });
     });
 
@@ -157,7 +157,7 @@ describe('API Functions', () => {
 
         it('should throw an error on network failure', async () => {
             vi.mocked(globalThis.fetch).mockRejectedValue(new Error('Network failed'));
-            await expect(() => checkAuth()).rejects.toThrow('Network failed');
+            await expect(() => checkAuth()).rejects.toThrow('Network error or unexpected issue');
         });
     });
 
@@ -168,7 +168,8 @@ describe('API Functions', () => {
         });
 
         it('should throw an error if feedId is not provided', async () => {
-            await expect(getStoriesForFeed(null)).rejects.toThrow('Feed ID is required');
+            // Pass an empty string which is falsy but matches the type signature
+            await expect(getStoriesForFeed("")).rejects.toThrow('Feed ID is required');
             expect(globalThis.fetch).not.toHaveBeenCalled();
         });
 
@@ -216,7 +217,7 @@ describe('API Functions', () => {
             const error = new Error('API Failed');
             vi.mocked(globalThis.fetch).mockRejectedValue(error);
 
-            await expect(getStoriesForFeed(feedId)).rejects.toThrow('API Failed');
+            await expect(getStoriesForFeed(feedId)).rejects.toThrow('Network error or unexpected issue');
         });
         
         it('should throw an error if api response is not ok', async () => {

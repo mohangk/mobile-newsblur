@@ -1,299 +1,235 @@
 // frontend/js/app.test.ts
-import { describe, it, expect, beforeEach, afterEach, vi, SpyInstance } from 'vitest';
+import {
+    describe,
+    test,
+    expect,
+    vi,
+    beforeEach,
+    Mocked
+} from 'vitest';
 
-// --- Mock Modules ---
-vi.mock('./api.js', () => ({
-    login: vi.fn(),
-    logout: vi.fn(),
-    getFeeds: vi.fn(),
-    checkAuth: vi.fn(),
-}));
-vi.mock('./ui.js', () => ({
-    showLoginView: vi.fn(),
-    showFeedListView: vi.fn(),
-    showLoginMessage: vi.fn(),
-    showFeedMessage: vi.fn(),
-    setLoginButtonState: vi.fn(),
-    renderFeedList: vi.fn(),
-    clearFeedDisplay: vi.fn(),
-}));
+// --- Mocks ---
+// Mock UI and API modules BEFORE importing app
+vi.mock('./ui');
+vi.mock('./api');
 
-// --- Import Modules Under Test (and Mocks) ---
-import * as api from './api.js';
-import * as ui from './ui.js';
-// Use namespace import to allow spying on exported functions
-import * as app from './app.js';
+import * as ui from './ui';
+import * as api from './api';
+// Import types from the correct source file
+import type { Feed, FeedMap, FeedResponse } from './types';
 
-// --- Global Test Setup/Teardown ---
-beforeEach(() => {
-    // Reset mocks BEFORE each test
-    vi.clearAllMocks();
-    // Restore any spied functions
-    vi.restoreAllMocks(); 
-    // Enable fake timers
-    vi.useFakeTimers();
-    // Set up minimal mock DOM 
-    document.body.innerHTML = `
-        <div id="app">
-            <div id="login-view"></div>
-            <div id="feed-list-view"></div>
-            <form id="login-form">
-                <input id="username" value="testuser" />
-                <input id="password" value="password123" />
-                <button id="login-button"></button>
-            </form>
-            <button id="logout-button"></button>
-            <p id="login-message-area"></p>
-            <p id="feed-message-area"></p>
-            <ul id="feed-list"></ul>
-        </div>
-    `;
-});
+// DO NOT import app statically if it runs init code on import
+// import './app';
 
-afterEach(() => {
-    // Restore real timers
-    vi.useRealTimers();
-    // Clean up DOM
-    document.body.innerHTML = '';
-});
+// We might need access to internal functions for testing if not exported
+// Let's assume for now tests cover behavior via initializeApp triggers
 
-// Helper function to run timers and microtasks
-async function runAsyncTicks() {
-    await Promise.resolve(); // Let initial promise queue clear
-    await vi.runAllTimersAsync(); // Run timers and their microtasks
-    await Promise.resolve(); // Let any new microtasks clear
-}
+// Type the mocked modules
+const mockedUi = ui as Mocked<typeof ui>;
+const mockedApi = api as Mocked<typeof api>;
 
-// --- Simplified Tests ---
+// --- Test Suite ---
+describe('App Logic (app.ts)', () => {
 
-describe('app.js integrations', () => {
+    // Variables to hold captured handlers - reset in relevant describe blocks
+    let capturedAppHandlers: { onLoginSubmit: () => Promise<void>; onLogoutClick: () => void; };
+    let capturedFeedClickHandler: (feedId: string | number) => void;
 
-    describe('checkAuthAndLoadView', () => {
-         // Mock fetchAndDisplayFeeds within this suite
-         let fetchAndDisplayFeedsSpy: SpyInstance<[], Promise<void>>;
-         beforeEach(() => {
-             fetchAndDisplayFeedsSpy = vi.spyOn(app, 'fetchAndDisplayFeeds') as SpyInstance<[], Promise<void>>;
-         });
-
-        it('should show feeds if authenticated (and implicitly call fetch)', async () => {
-            vi.mocked(api.checkAuth).mockResolvedValue(true);
-            // Add back the necessary mock for the *internal* call
-            vi.mocked(api.getFeeds).mockResolvedValue({ 
-                feeds: { '1': {id: 1, feed_title: 'Test Feed'} },
-                folders: [] 
-            });
-
-            await app.checkAuthAndLoadView();
-            await runAsyncTicks();
-
-            expect(api.checkAuth).toHaveBeenCalledTimes(1);
-            expect(ui.showFeedListView).toHaveBeenCalledTimes(1);
-            // Since fetchAndDisplayFeeds is no longer spied on, we can't assert its call count here.
-            // We rely on the direct tests of fetchAndDisplayFeeds to cover its internal logic.
-            expect(ui.showLoginView).not.toHaveBeenCalled();
-        });
-
-        it('should show login if not authenticated', async () => {
-            vi.mocked(api.checkAuth).mockResolvedValue(false);
-
-            await app.checkAuthAndLoadView();
-            await runAsyncTicks();
-
-            expect(api.checkAuth).toHaveBeenCalledTimes(1);
-            expect(ui.showLoginView).toHaveBeenCalledTimes(1);
-            expect(ui.showFeedListView).not.toHaveBeenCalled();
-            // Check fetchAndDisplayFeeds was NOT called
-            expect(fetchAndDisplayFeedsSpy).not.toHaveBeenCalled(); 
-        });
-
-        it('should show login on auth check error', async () => {
-            vi.mocked(api.checkAuth).mockRejectedValue(new Error('Network Error'));
-
-            await app.checkAuthAndLoadView();
-            await runAsyncTicks();
-
-            expect(api.checkAuth).toHaveBeenCalledTimes(1);
-            expect(ui.showLoginView).toHaveBeenCalledTimes(1);
-            expect(ui.showLoginMessage).toHaveBeenCalledWith(expect.stringContaining('Error contacting server'), true);
-            // Check fetchAndDisplayFeeds was NOT called
-            expect(fetchAndDisplayFeedsSpy).not.toHaveBeenCalled();
-        });
+    // General cleanup
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
 
-    describe('handleLoginSubmit', () => {
-        let mockEvent: Event;
+    // Function to initialize mocks and import the app module dynamically
+    async function initializeAppWithMocks() {
+         // Reset modules to ensure app runs its init code again
+        vi.resetModules();
 
-        beforeEach(() => {
-            vi.clearAllMocks();
-            mockEvent = { preventDefault: vi.fn() } as unknown as Event;
-
-            document.body.innerHTML = `
-                <form id="login-form">
-                    <input id="username" value="testuser" />
-                    <input id="password" value="password123" />
-                    <div id="login-message-area"></div>
-                    <button id="login-button"></button>
-                </form>
-                <div id="feed-list-view" style="display: none;"></div>
-            `;
+        // Mock implementations to capture the handlers passed from app.ts
+        mockedUi.initializeUI.mockImplementation((handlers) => {
+            capturedAppHandlers = handlers;
+        });
+        mockedUi.setFeedItemClickHandler.mockImplementation((handler) => {
+            capturedFeedClickHandler = handler;
         });
 
-        afterEach(() => {
-            document.body.innerHTML = '';
+        // Dynamically import the app module to trigger its execution
+        await import('./app');
+
+        // Add checks to ensure handlers were captured
+        if (!capturedAppHandlers) {
+            console.error("Test Setup Error: initializeUI was not called by app.ts");
+        }
+        if (!capturedFeedClickHandler) {
+             console.error("Test Setup Error: setFeedItemClickHandler was not called by app.ts");
+        }
+    }
+
+    // == Test initial load flow ==
+    describe('Initial Load Flow', () => {
+        test('should call checkAuth, then show feeds if authenticated', async () => {
+            // Arrange Mocks FIRST
+            mockedApi.checkAuth.mockResolvedValue(true);
+            const mockFeedData: FeedResponse = { feeds: { '1': { id: 1, feed_title: 'Feed A', favicon_url: null } }, folders: [] };
+            mockedApi.getFeeds.mockResolvedValue(mockFeedData);
+
+            // Act: Initialize app with these mocks
+            await initializeAppWithMocks();
+
+            // Assert calls made during initialization
+            expect(mockedApi.checkAuth).toHaveBeenCalledTimes(1);
+            // Assert fetchAndDisplayFeeds flow
+            expect(mockedUi.showFeedListView).toHaveBeenCalled();
+            expect(mockedUi.showFeedMessage).toHaveBeenCalledWith('Loading feeds...');
+            expect(mockedUi.clearFeedDisplay).toHaveBeenCalled();
+            expect(mockedApi.getFeeds).toHaveBeenCalledTimes(1);
+            expect(mockedUi.renderFeedList).toHaveBeenCalledWith([{ id: 1, feed_title: 'Feed A', favicon_url: null }]);
+            // renderFeedList clears message internally on success
         });
 
-        /* // COMMENT OUT FLAKY TEST
-        it('should attempt login and show feeds on success (implicitly calling fetch)', async () => {
-            // Arrange
-            vi.mocked(api.login).mockResolvedValue({ authenticated: true });
-            vi.mocked(api.getFeeds).mockResolvedValue({ feeds: { 1: {id: 1, feed_title: 'Feed'} }, folders: [] });
-            // Setup spy specifically for this test, ADDING A CONSOLE LOG
-            const fetchAndDisplayFeedsSpy = vi.spyOn(app, 'fetchAndDisplayFeeds')
-                                             .mockImplementation(async () => { 
-                                                console.log('*** SPY: fetchAndDisplayFeeds called! ***');
-                                              });
+        test('should call checkAuth, then show login if not authenticated', async () => {
+            // Arrange Mocks FIRST
+            mockedApi.checkAuth.mockResolvedValue(false);
 
-            // Act
-            await app.handleLoginSubmit(mockEvent); 
-            await vi.runAllTimersAsync(); // RE-ADD this line
+            // Act: Initialize app with these mocks
+            await initializeAppWithMocks();
 
             // Assert
-            expect(mockEvent.preventDefault).toHaveBeenCalledTimes(1);
-            expect(ui.showLoginMessage).toHaveBeenCalledWith('Logging in...');
-            expect(ui.setLoginButtonState).toHaveBeenCalledWith(true);
-            expect(api.login).toHaveBeenCalledWith('testuser', 'password123');
-            expect(ui.showLoginMessage).toHaveBeenCalledWith('Success!', false);
-            expect(ui.showFeedListView).toHaveBeenCalledTimes(1);
-            expect(fetchAndDisplayFeedsSpy).toHaveBeenCalledTimes(1); 
-            expect(ui.setLoginButtonState).toHaveBeenCalledWith(false); 
-            
-            fetchAndDisplayFeedsSpy.mockRestore();
+            expect(mockedApi.checkAuth).toHaveBeenCalledTimes(1);
+            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1);
+            expect(mockedApi.getFeeds).not.toHaveBeenCalled();
+            expect(mockedUi.showFeedListView).not.toHaveBeenCalled();
         });
-        */ // END COMMENT OUT FLAKY TEST
 
-        it('should show error on login failure', async () => {
-            // Arrange
-            vi.mocked(api.login).mockRejectedValue(new Error('Bad credentials'));
-            // Setup spy specifically for this test
-            const fetchAndDisplayFeedsSpy = vi.spyOn(app, 'fetchAndDisplayFeeds')
-                                             .mockImplementation(async () => { /* Track Call */});
+        test('should show login view on auth check error', async () => {
+            // Arrange Mocks FIRST
+            mockedApi.checkAuth.mockRejectedValue(new Error('Auth Network Error'));
 
-            // Act
-            await app.handleLoginSubmit(mockEvent); 
-            await vi.runAllTimersAsync(); // RE-ADD this line
+            // Act: Initialize app with these mocks
+            await initializeAppWithMocks();
 
             // Assert
-            expect(mockEvent.preventDefault).toHaveBeenCalledTimes(1);
-            expect(api.login).toHaveBeenCalledTimes(1);
-            expect(ui.showLoginMessage).toHaveBeenCalledWith('Bad credentials', true);
-            expect(ui.showFeedListView).not.toHaveBeenCalled();
-            expect(fetchAndDisplayFeedsSpy).not.toHaveBeenCalled(); 
-            expect(ui.setLoginButtonState).toHaveBeenCalledWith(false); 
+            expect(mockedApi.checkAuth).toHaveBeenCalledTimes(1);
+            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1);
+            expect(mockedApi.getFeeds).not.toHaveBeenCalled();
+        });
+    });
 
-            fetchAndDisplayFeedsSpy.mockRestore();
+    // == Test user interactions (login, logout, feed click) ==
+    // These tests rely on handlers captured during initialization
+    describe('User Interactions', () => {
+        // Initialize app once before tests in this suite to capture handlers
+        beforeEach(async () => {
+            // Setup default mocks needed for initialization if any
+            // (e.g., if checkAuth fails, subsequent tests might depend on login view state)
+            mockedApi.checkAuth.mockResolvedValue(false); // Default to not authenticated
+            await initializeAppWithMocks();
+            // Verify handlers are captured before running tests
+            if (!capturedAppHandlers || !capturedFeedClickHandler) {
+                 throw new Error('Handlers not captured during interaction test setup');
+            }
         });
 
-        it('should require username and password', async () => {
-            // Arrange
-            (document.getElementById('username') as HTMLInputElement).value = '';
-            (document.getElementById('password') as HTMLInputElement).value = '';
-            const fetchAndDisplayFeedsSpy = vi.spyOn(app, 'fetchAndDisplayFeeds')
-                                             .mockImplementation(async () => { /* Track Call */});
+        test('handleLoginSubmit: success flow', async () => {
+            // Arrange: Setup mocks for login and feed fetch success
+            mockedUi.getLoginCredentials.mockReturnValue({ username: 'test', password: 'pass' });
+            mockedApi.login.mockResolvedValue({ authenticated: true });
+            const mockFeedData: FeedResponse = { feeds: { '2': { id: 2, feed_title: 'Feed B', favicon_url: 'b.png' } }, folders: [] };
+            mockedApi.getFeeds.mockResolvedValue(mockFeedData);
+
+            // Act: Trigger the captured handler
+            await capturedAppHandlers.onLoginSubmit();
+
+            // Assert Login Flow
+            expect(mockedUi.getLoginCredentials).toHaveBeenCalledTimes(1);
+            expect(mockedUi.setLoginButtonState).toHaveBeenCalledWith(true);
+            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Logging in...');
+            expect(mockedApi.login).toHaveBeenCalledWith('test', 'pass');
+            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Login successful!', false);
+
+            // Assert fetchAndDisplayFeeds Flow (called after successful login)
+            expect(mockedUi.showFeedListView).toHaveBeenCalled();
+            expect(mockedUi.showFeedMessage).toHaveBeenCalledWith('Loading feeds...'); // Initial message
+            expect(mockedUi.clearFeedDisplay).toHaveBeenCalled();
+            expect(mockedApi.getFeeds).toHaveBeenCalledTimes(1);
+            expect(mockedUi.renderFeedList).toHaveBeenCalledWith([{ id: 2, feed_title: 'Feed B', favicon_url: 'b.png' }]);
+        });
+
+        test('handleLoginSubmit: login failure', async () => {
+            // Arrange: Mock login failure
+            mockedUi.getLoginCredentials.mockReturnValue({ username: 'user', password: 'wrong' });
+            const loginError = new Error('Bad credentials') as any;
+            loginError.data = { message: 'Bad credentials' };
+            mockedApi.login.mockRejectedValue(loginError);
 
             // Act
-            await app.handleLoginSubmit(mockEvent); 
-            await vi.runAllTimersAsync();
+            await capturedAppHandlers.onLoginSubmit();
 
             // Assert
-            expect(mockEvent.preventDefault).toHaveBeenCalledTimes(1);
-            expect(api.login).not.toHaveBeenCalled();
-            expect(ui.showLoginMessage).toHaveBeenCalledWith('Username and password are required.', true);
-            expect(fetchAndDisplayFeedsSpy).not.toHaveBeenCalled();
-
-            fetchAndDisplayFeedsSpy.mockRestore();
-        });
-        
-        // Add test for isLoading guard if necessary
-    });
-
-    describe('handleLogout', () => {
-        it('should call api.logout and show login view on success', async () => {
-            vi.mocked(api.logout).mockResolvedValue({ authenticated: false });
-
-            await app.handleLogout();
-            await runAsyncTicks();
-
-            expect(api.logout).toHaveBeenCalledTimes(1);
-            expect(ui.showLoginView).toHaveBeenCalledTimes(1);
+            expect(mockedUi.getLoginCredentials).toHaveBeenCalledTimes(1);
+            expect(mockedUi.setLoginButtonState).toHaveBeenCalledWith(true); // Disabled during attempt
+            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Logging in...');
+            expect(mockedApi.login).toHaveBeenCalledWith('user', 'wrong');
+            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Bad credentials', true); // Error shown
+            expect(mockedUi.setLoginButtonState).toHaveBeenCalledWith(false); // Re-enabled after error
+            expect(mockedApi.getFeeds).not.toHaveBeenCalled(); // Feed fetch should not happen
+            expect(mockedUi.renderFeedList).not.toHaveBeenCalled();
         });
 
-        it('should show login view even if logout fails', async () => {
-            vi.mocked(api.logout).mockRejectedValue(new Error('Logout failed'));
+        test('handleLoginSubmit: missing credentials', async () => {
+            // Arrange: Mock missing credentials
+            mockedUi.getLoginCredentials.mockReturnValue(null);
 
-            await app.handleLogout();
-            await runAsyncTicks();
+            // Act
+            await capturedAppHandlers.onLoginSubmit();
 
-            expect(api.logout).toHaveBeenCalledTimes(1);
-            expect(ui.showLoginView).toHaveBeenCalledTimes(1);
-        });
-    });
-
-     describe('handleFeedItemClick', () => {
-        it('should show a message with the feed ID', async () => {
-            app.handleFeedItemClick(123);
-            await runAsyncTicks();
-            expect(ui.showFeedMessage).toHaveBeenCalledWith('Selected Feed ID: 123');
-        });
-    });
-
-    // New describe block for fetchAndDisplayFeeds
-    describe('fetchAndDisplayFeeds', () => {
-        it('should show loading message, clear display, call getFeeds, and render list on success', async () => {
-            const mockFeedData = { 
-                feeds: { 1: { id: 1, feed_title: 'Feed A' } },
-                folders: [] 
-            };
-            vi.mocked(api.getFeeds).mockResolvedValue(mockFeedData);
-
-            await app.fetchAndDisplayFeeds();
-            // No runAsyncTicks needed here as we directly await the function
-
-            expect(ui.showFeedMessage).toHaveBeenCalledWith("Loading feeds...");
-            expect(ui.clearFeedDisplay).toHaveBeenCalledTimes(1);
-            expect(api.getFeeds).toHaveBeenCalledTimes(1);
-            expect(ui.renderFeedList).toHaveBeenCalledTimes(1);
-            // Check that the correct data is passed to renderFeedList
-            expect(ui.renderFeedList).toHaveBeenCalledWith(
-                [mockFeedData.feeds[1]], // Expecting an array of feeds
-                app.handleFeedItemClick // Check correct handler is passed
-            );
-            // Check message is cleared on success
-            expect(ui.showFeedMessage).toHaveBeenCalledWith("");
+            // Assert
+            expect(mockedUi.getLoginCredentials).toHaveBeenCalledTimes(1);
+            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Username and password are required.', true);
+            expect(mockedApi.login).not.toHaveBeenCalled();
+            expect(mockedUi.setLoginButtonState).not.toHaveBeenCalled();
         });
 
-        it('should show error message if getFeeds fails', async () => {
-            const error = new Error('API Error');
-            vi.mocked(api.getFeeds).mockRejectedValue(error);
+        test('handleLogout: success flow', async () => {
+            // Arrange: Mock successful logout
+            // We need to clear mocks *after* the beforeEach setup call to isolate this test's calls
+            vi.clearAllMocks(); // Clear mocks from beforeEach init
+            mockedApi.logout.mockResolvedValue({});
 
-            await app.fetchAndDisplayFeeds();
+            // Act
+            await capturedAppHandlers.onLogoutClick();
 
-            expect(ui.showFeedMessage).toHaveBeenCalledWith("Loading feeds...");
-            expect(ui.clearFeedDisplay).toHaveBeenCalledTimes(1);
-            expect(api.getFeeds).toHaveBeenCalledTimes(1);
-            expect(ui.renderFeedList).not.toHaveBeenCalled();
-            // Use toHaveBeenLastCalledWith for the final error message
-            expect(ui.showFeedMessage).toHaveBeenLastCalledWith("Error loading feeds: API Error", true);
+            // Assert
+            expect(mockedApi.logout).toHaveBeenCalledTimes(1);
+            // Expect 1 call *during this test's execution*
+            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1); 
         });
 
-        it('should handle empty feeds response', async () => {
-            const mockFeedData = { feeds: {}, folders: [] }; // Empty feeds
-            vi.mocked(api.getFeeds).mockResolvedValue(mockFeedData);
+        test('handleLogout: failure flow', async () => {
+            // Arrange: Mock failed logout
+            // Clear mocks *after* the beforeEach setup call
+            vi.clearAllMocks(); 
+            mockedApi.logout.mockRejectedValue(new Error('Logout failed'));
 
-            await app.fetchAndDisplayFeeds();
+            // Act
+            await capturedAppHandlers.onLogoutClick();
 
-            expect(ui.renderFeedList).toHaveBeenCalledWith([], app.handleFeedItemClick);
-            expect(ui.showFeedMessage).toHaveBeenCalledWith(""); // Clear message
+            // Assert
+            expect(mockedApi.logout).toHaveBeenCalledTimes(1);
+            // Expect 1 call *during this test's execution*, even on failure
+            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1); 
+        });
+
+        test('handleFeedItemClick: interaction', () => {
+            // Arrange
+            const feedId = 42;
+
+            // Act: Trigger captured handler
+            capturedFeedClickHandler(feedId);
+
+            // Assert
+            expect(mockedUi.showFeedMessage).toHaveBeenCalledTimes(1);
+            expect(mockedUi.showFeedMessage).toHaveBeenCalledWith(`Selected Feed ID: ${feedId}. Story loading not implemented yet.`);
         });
     });
-
 });
