@@ -20,12 +20,13 @@ mobile-newsblur/
 │   │   ├── input.css   (Tailwind input)
 │   │   └── style.css   (Tailwind output)
 │   └── js/
-│       ├── app.js      (Main application logic)
-│       ├── api.js      (API call wrappers)
-│       ├── ui.js       (DOM manipulation functions)
-│       ├── app.test.js (Integration tests for app.js)
-│       ├── api.test.js (Unit tests for api.js)
-│       ├── ui.test.js  (Unit tests for ui.js)
+│       ├── app.ts      (Main application logic)
+│       ├── api.ts      (API call wrappers)
+│       ├── ui.ts       (DOM manipulation functions)
+│       ├── types.ts    (Shared TypeScript types)
+│       ├── app.test.ts (Integration tests for app.ts)
+│       ├── api.test.ts (Unit tests for api.ts)
+│       ├── ui.test.ts  (Unit tests for ui.ts)
 │       └── vitest.setup.js (Test environment setup)
 ├── node_modules/      <-- Backend dependencies
 ├── frontend/node_modules/ <-- Frontend dependencies (incl. Vitest, JSDOM)
@@ -58,21 +59,22 @@ mobile-newsblur/
 
 ## Frontend Development & Testing
 
-### JavaScript Modules
+### TypeScript Modules
 
-The frontend JavaScript (`frontend/js/`) has been modularized:
+The frontend TypeScript code (`frontend/js/`) has been modularized:
 
-*   `app.js`: Contains the main application flow, event listeners, and orchestrates calls between UI and API modules.
-*   `api.js`: Wraps `fetch` calls to interact with the backend proxy worker.
-*   `ui.js`: Contains functions dedicated to updating the DOM (showing/hiding views, rendering lists, displaying messages).
+*   `app.ts`: Contains the main application flow, event listeners, and orchestrates calls between UI and API modules.
+*   `api.ts`: Wraps `fetch` calls to interact with the backend proxy worker.
+*   `ui.ts`: Contains functions dedicated to updating the DOM (showing/hiding views, rendering lists, displaying messages).
+*   `types.ts`: Defines shared TypeScript interfaces and types used across modules.
 
 ### Testing with Vitest
 
-[Vitest](https://vitest.dev/) is used for testing the frontend JavaScript modules. The tests run in a Node.js environment using [JSDOM](https://github.com/jsdom/jsdom) to simulate the browser DOM.
+[Vitest](https://vitest.dev/) is used for testing the frontend TypeScript modules. The tests run in a Node.js environment using [JSDOM](https://github.com/jsdom/jsdom) to simulate the browser DOM.
 
-*   **Test Files:** Located alongside the modules they test (e.g., `app.test.js`, `ui.test.js`, `api.test.js`).
+*   **Test Files:** Located alongside the modules they test (e.g., `app.test.ts`, `ui.test.ts`, `api.test.ts`).
 *   **Setup:** `vitest.setup.js` configures the JSDOM environment before tests run.
-*   **Mocks:** `vi.mock()` is used extensively in `app.test.js` to isolate the `app.js` logic by mocking the `api.js` and `ui.js` modules.
+*   **Mocks:** `vi.mock()` is used extensively in `app.test.ts` to isolate the `app.ts` logic by mocking the `api.ts` and `ui.ts` modules.
 
 **Running Frontend Tests:**
 
@@ -88,36 +90,38 @@ npm run test:watch
 
 ## Combined Local Development
 
-To run the full application locally, you'll need **three terminals** running concurrently from the project root (`mobile-newsblur/`):
+To run the full application locally, you'll need **three terminals** running concurrently:
 
-1.  **Terminal 1 (Tailwind CSS Build):** Compiles Tailwind CSS and watches for changes.
+1.  **Terminal 1 (Backend Worker):** Runs the Cloudflare Worker locally.
     ```bash
+    # Ensure you are in the project root directory (mobile-newsblur/)
+    npm run dev
+    # Leave this running (Usually serves on http://localhost:8787)
+    ```
+2.  **Terminal 2 (Tailwind CSS Build):** Compiles Tailwind CSS and watches for changes.
+    ```bash
+    # Navigate to the frontend directory
     cd frontend
     npm run build:css
     # Leave this running
     ```
-2.  **Terminal 2 (Backend Worker):** Runs the Cloudflare Worker locally.
+3.  **Terminal 3 (Frontend Server):** Serves the frontend using Vite.
     ```bash
-    # Ensure you are in the project root directory
-    npx wrangler dev
-    # Leave this running (Usually serves on http://localhost:8787)
-    ```
-3.  **Terminal 3 (Frontend Server):** Serves the static frontend files.
-    ```bash
-    # Ensure you are in the project root directory
-    npx http-server frontend -a localhost -p 8080
-    # Leave this running (Usually serves on http://localhost:8080)
+    # Navigate to the frontend directory
+    cd frontend
+    npm run dev
+    # Leave this running (Usually serves on http://localhost:5173 or similar - check Vite output)
     ```
 
 **Accessing the App:**
 
-*   Open your browser to the frontend URL (e.g., `http://localhost:8080`).
+*   Open your browser to the frontend URL provided by the Vite server (e.g., `http://localhost:5173`).
 *   The frontend interacts with the backend worker at its URL (e.g., `http://localhost:8787`).
-*   Ensure `wrangler.toml` has the correct `FRONTEND_URL` set for the frontend server's origin.
+*   Ensure `wrangler.toml` has the correct `FRONTEND_URL` set for the frontend server's origin (e.g., `http://127.0.0.1:5173` or `http://localhost:5173`). Note that the port might differ.
 
 ## Frontend Interaction Notes
 
-*   The JavaScript code in `frontend/js/app.js` makes API calls to the backend worker URL, prefixing all NewsBlur API paths with `/proxy` (e.g., `/proxy/api/login`, `/proxy/reader/feeds`).
+*   The TypeScript code in `frontend/js/app.ts` makes API calls to the backend worker URL, prefixing all NewsBlur API paths with `/proxy` (e.g., `/proxy/api/login`, `/proxy/reader/feeds`).
 *   Authentication relies on the `proxy_session_id` cookie set by the worker and automatically handled by the browser (requires correct `SameSite`, `Secure`, and CORS configuration).
 
 ## Deploying

@@ -55,6 +55,24 @@
             </ul>
         </div>
 
+        <!-- Story List View (Hidden by default) -->
+        <div id="story-list-view" class="hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 truncate">
+                    <span id="story-list-title">Feed Title</span> <!-- Title goes here -->
+                </h2>
+                <button id="back-to-feeds-button" class="bg-gray-500 hover:bg-gray-600 text-white text-sm font-semibold py-1 px-3 rounded focus:outline-none focus:shadow-outline flex-shrink-0">
+                   &larr; Back
+                </button>
+            </div>
+            <!-- Placeholder for story loading/error messages -->
+            <p id="story-message-area" class="text-center text-gray-500 dark:text-gray-400 mb-4 h-5"></p> <!-- Height placeholder -->
+            <!-- Story List Container -->
+            <ul id="story-list" class="bg-white dark:bg-gray-800 rounded shadow overflow-hidden">
+                <!-- Story items will be dynamically generated here -->
+            </ul>
+        </div>
+
     </div><!-- /#app -->
 
     <!-- Link to the main TypeScript file as a module -->

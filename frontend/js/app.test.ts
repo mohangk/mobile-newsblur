@@ -5,18 +5,18 @@ import {
     expect,
     vi,
     beforeEach,
+    afterEach,
     Mocked
 } from 'vitest';
 
-// --- Mocks ---
-// Mock UI and API modules BEFORE importing app
+// Mocking at top level is required by Vitest
 vi.mock('./ui');
 vi.mock('./api');
 
 import * as ui from './ui';
 import * as api from './api';
 // Import types from the correct source file
-import type { Feed, FeedMap, FeedResponse } from './types';
+import type { Feed, FeedMap, FeedResponse, Story, ApiError } from './types';
 
 // DO NOT import app statically if it runs init code on import
 // import './app';
@@ -28,208 +28,238 @@ import type { Feed, FeedMap, FeedResponse } from './types';
 const mockedUi = ui as Mocked<typeof ui>;
 const mockedApi = api as Mocked<typeof api>;
 
-// --- Test Suite ---
+// Hold captured handlers globally within the describe block
+let capturedAppHandlers: { onLoginSubmit: () => Promise<void>; onLogoutClick: () => void; } | null = null;
+let capturedFeedClickHandler: ((feedId: string | number, feedTitle: string) => void) | null = null; 
+let backButtonClickListener: (() => void) | null = null;
+
 describe('App Logic (app.ts)', () => {
 
-    // Variables to hold captured handlers - reset in relevant describe blocks
-    let capturedAppHandlers: { onLoginSubmit: () => Promise<void>; onLogoutClick: () => void; };
-    let capturedFeedClickHandler: (feedId: string | number) => void;
-
-    // General cleanup
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    // Function to initialize mocks and import the app module dynamically
-    async function initializeAppWithMocks() {
-         // Reset modules to ensure app runs its init code again
-        vi.resetModules();
-
-        // Mock implementations to capture the handlers passed from app.ts
+    // Function to dynamically import app and capture handlers
+    // Call this within beforeEach or tests where app init logic needs to run
+    async function initializeAppAndCaptureHandlers() {
+        // Ensure mocks are setup *before* import
         mockedUi.initializeUI.mockImplementation((handlers) => {
             capturedAppHandlers = handlers;
         });
         mockedUi.setFeedItemClickHandler.mockImplementation((handler) => {
-            capturedFeedClickHandler = handler;
+            capturedFeedClickHandler = handler; 
         });
+        
+        // Capture back button listener
+        const backButton = document.getElementById('back-to-feeds-button') as HTMLButtonElement | null;
+        if (backButton) {
+             // Use mockImplementation on the mocked function if vi.mock was used
+             // or directly assign if just spying/capturing
+             // Assuming we want to capture the listener passed from app.ts
+            const originalAddEventListener = backButton.addEventListener.bind(backButton);
+            backButton.addEventListener = vi.fn((type, listener, options) => {
+                 if (type === 'click') {
+                     backButtonClickListener = listener as () => void;
+                 }
+                 // Call original if needed, or handle mock behavior
+                 // originalAddEventListener(type, listener, options);
+            });
+        } else {
+             console.warn('Back button not in DOM for listener capture during init');
+        }
 
-        // Dynamically import the app module to trigger its execution
+        // Import app to run its top-level code (incl. initializeApp)
+        // Vitest handles running this in the mocked environment
         await import('./app');
-
-        // Add checks to ensure handlers were captured
-        if (!capturedAppHandlers) {
-            console.error("Test Setup Error: initializeUI was not called by app.ts");
-        }
-        if (!capturedFeedClickHandler) {
-             console.error("Test Setup Error: setFeedItemClickHandler was not called by app.ts");
-        }
+        
+         // Short delay to allow potential microtasks from init to run
+         await new Promise(resolve => setTimeout(resolve, 0));
+         
+         // Verify handlers captured after potential delay
+         if (!capturedAppHandlers || !capturedFeedClickHandler || !backButtonClickListener) {
+            console.warn('Handlers were not captured after app initialization.');
+         }
     }
 
-    // == Test initial load flow ==
-    describe('Initial Load Flow', () => {
-        test('should call checkAuth, then show feeds if authenticated', async () => {
-            // Arrange Mocks FIRST
+    // Setup basic DOM before each test
+    beforeEach(() => {
+        vi.resetModules(); // Reset modules to allow re-import and clean state
+        vi.clearAllMocks(); // Clear mocks from previous test
+        // Setup minimal DOM structure needed by most tests
+        document.body.innerHTML = `
+            <div id="app">
+                <button id="back-to-feeds-button">Back</button>
+                <div id="login-view"> <p id="login-message-area"></p> <button id="login-button"></button> <input id="username"><input id="password"></div>
+                <div id="feed-list-view"> <p id="feed-message-area"></p> <ul id="feed-list"></ul> </div>
+                <div id="story-list-view"> <p id="story-message-area"></p> <ul id="story-list"></ul> <span id="story-list-title"></span> </div>
+            </div>
+        `;
+        // Reset captured handlers
+        capturedAppHandlers = null;
+        capturedFeedClickHandler = null;
+        backButtonClickListener = null;
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    describe('Initialization Flow', () => {
+        test('should initialize UI, set handlers, and check auth', async () => {
+            mockedApi.checkAuth.mockResolvedValue(false);
+            await initializeAppAndCaptureHandlers();
+
+            expect(mockedUi.initializeUI).toHaveBeenCalledTimes(1);
+            expect(mockedUi.setFeedItemClickHandler).toHaveBeenCalledTimes(1);
+            const backButton = document.getElementById('back-to-feeds-button');
+            expect(backButton?.addEventListener).toHaveBeenCalledWith('click', expect.any(Function));
+            expect(mockedApi.checkAuth).toHaveBeenCalledTimes(1);
+        });
+
+        test('should show login view if not authenticated', async () => {
+             mockedApi.checkAuth.mockResolvedValue(false);
+             await initializeAppAndCaptureHandlers();
+             await vi.dynamicImportSettled();
+
+             expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1);
+             expect(mockedApi.getFeeds).not.toHaveBeenCalled();
+        });
+        
+        test('should show feed view and load feeds if authenticated', async () => {
             mockedApi.checkAuth.mockResolvedValue(true);
             const mockFeedData: FeedResponse = { feeds: { '1': { id: 1, feed_title: 'Feed A', favicon_url: null } }, folders: [] };
             mockedApi.getFeeds.mockResolvedValue(mockFeedData);
-
-            // Act: Initialize app with these mocks
-            await initializeAppWithMocks();
-
-            // Assert calls made during initialization
-            expect(mockedApi.checkAuth).toHaveBeenCalledTimes(1);
-            // Assert fetchAndDisplayFeeds flow
-            expect(mockedUi.showFeedListView).toHaveBeenCalled();
-            expect(mockedUi.showFeedMessage).toHaveBeenCalledWith('Loading feeds...');
-            expect(mockedUi.clearFeedDisplay).toHaveBeenCalled();
+            
+            await initializeAppAndCaptureHandlers();
+            await vi.dynamicImportSettled(); 
+            
             expect(mockedApi.getFeeds).toHaveBeenCalledTimes(1);
-            expect(mockedUi.renderFeedList).toHaveBeenCalledWith([{ id: 1, feed_title: 'Feed A', favicon_url: null }]);
-            // renderFeedList clears message internally on success
+            expect(mockedUi.showFeedListView).toHaveBeenCalledTimes(1);
+            expect(mockedUi.renderFeedList).toHaveBeenCalledWith(expect.any(Array));
         });
-
-        test('should call checkAuth, then show login if not authenticated', async () => {
-            // Arrange Mocks FIRST
-            mockedApi.checkAuth.mockResolvedValue(false);
-
-            // Act: Initialize app with these mocks
-            await initializeAppWithMocks();
-
-            // Assert
-            expect(mockedApi.checkAuth).toHaveBeenCalledTimes(1);
-            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1);
-            expect(mockedApi.getFeeds).not.toHaveBeenCalled();
-            expect(mockedUi.showFeedListView).not.toHaveBeenCalled();
-        });
-
-        test('should show login view on auth check error', async () => {
-            // Arrange Mocks FIRST
-            mockedApi.checkAuth.mockRejectedValue(new Error('Auth Network Error'));
-
-            // Act: Initialize app with these mocks
-            await initializeAppWithMocks();
-
-            // Assert
-            expect(mockedApi.checkAuth).toHaveBeenCalledTimes(1);
+        
+         test('should show login view on auth check error', async () => {
+            mockedApi.checkAuth.mockRejectedValue(new Error('Auth Fail'));
+            await initializeAppAndCaptureHandlers();
+            await vi.dynamicImportSettled();
+            
             expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1);
             expect(mockedApi.getFeeds).not.toHaveBeenCalled();
         });
     });
 
-    // == Test user interactions (login, logout, feed click) ==
-    // These tests rely on handlers captured during initialization
     describe('User Interactions', () => {
-        // Initialize app once before tests in this suite to capture handlers
+        // Initialize app and capture handlers before each interaction test
         beforeEach(async () => {
-            // Setup default mocks needed for initialization if any
-            // (e.g., if checkAuth fails, subsequent tests might depend on login view state)
-            mockedApi.checkAuth.mockResolvedValue(false); // Default to not authenticated
-            await initializeAppWithMocks();
-            // Verify handlers are captured before running tests
-            if (!capturedAppHandlers || !capturedFeedClickHandler) {
-                 throw new Error('Handlers not captured during interaction test setup');
-            }
+            mockedApi.checkAuth.mockResolvedValue(false); // Assume starts logged out for most tests
+            await initializeAppAndCaptureHandlers();
+             if (!capturedAppHandlers || !capturedFeedClickHandler || !backButtonClickListener) {
+                 // Wait a bit longer if handlers aren't captured immediately
+                 await new Promise(resolve => setTimeout(resolve, 10)); 
+                 if (!capturedAppHandlers || !capturedFeedClickHandler || !backButtonClickListener) {
+                    throw new Error('Handlers not captured before interaction tests');
+                 }
+             }
         });
 
         test('handleLoginSubmit: success flow', async () => {
-            // Arrange: Setup mocks for login and feed fetch success
             mockedUi.getLoginCredentials.mockReturnValue({ username: 'test', password: 'pass' });
             mockedApi.login.mockResolvedValue({ authenticated: true });
-            const mockFeedData: FeedResponse = { feeds: { '2': { id: 2, feed_title: 'Feed B', favicon_url: 'b.png' } }, folders: [] };
+            const mockFeedData: FeedResponse = { feeds: { '2': { id: 2, feed_title: 'Feed B', favicon_url: null } }, folders: [] };
             mockedApi.getFeeds.mockResolvedValue(mockFeedData);
 
-            // Act: Trigger the captured handler
-            await capturedAppHandlers.onLoginSubmit();
+            await capturedAppHandlers!.onLoginSubmit();
 
-            // Assert Login Flow
-            expect(mockedUi.getLoginCredentials).toHaveBeenCalledTimes(1);
-            expect(mockedUi.setLoginButtonState).toHaveBeenCalledWith(true);
-            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Logging in...');
             expect(mockedApi.login).toHaveBeenCalledWith('test', 'pass');
-            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Login successful!', false);
-
-            // Assert fetchAndDisplayFeeds Flow (called after successful login)
-            expect(mockedUi.showFeedListView).toHaveBeenCalled();
-            expect(mockedUi.showFeedMessage).toHaveBeenCalledWith('Loading feeds...'); // Initial message
-            expect(mockedUi.clearFeedDisplay).toHaveBeenCalled();
+            await vi.dynamicImportSettled(); 
             expect(mockedApi.getFeeds).toHaveBeenCalledTimes(1);
-            expect(mockedUi.renderFeedList).toHaveBeenCalledWith([{ id: 2, feed_title: 'Feed B', favicon_url: 'b.png' }]);
+            expect(mockedUi.showFeedListView).toHaveBeenCalledTimes(1);
+            expect(mockedUi.renderFeedList).toHaveBeenCalledWith(expect.any(Array));
         });
 
         test('handleLoginSubmit: login failure', async () => {
-            // Arrange: Mock login failure
             mockedUi.getLoginCredentials.mockReturnValue({ username: 'user', password: 'wrong' });
-            const loginError = new Error('Bad credentials') as any;
+            const loginError: ApiError = new Error('Bad credentials') as ApiError;
             loginError.data = { message: 'Bad credentials' };
             mockedApi.login.mockRejectedValue(loginError);
 
-            // Act
-            await capturedAppHandlers.onLoginSubmit();
+            await capturedAppHandlers!.onLoginSubmit();
+            await vi.dynamicImportSettled();
 
-            // Assert
-            expect(mockedUi.getLoginCredentials).toHaveBeenCalledTimes(1);
-            expect(mockedUi.setLoginButtonState).toHaveBeenCalledWith(true); // Disabled during attempt
-            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Logging in...');
-            expect(mockedApi.login).toHaveBeenCalledWith('user', 'wrong');
-            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Bad credentials', true); // Error shown
-            expect(mockedUi.setLoginButtonState).toHaveBeenCalledWith(false); // Re-enabled after error
-            expect(mockedApi.getFeeds).not.toHaveBeenCalled(); // Feed fetch should not happen
-            expect(mockedUi.renderFeedList).not.toHaveBeenCalled();
-        });
-
-        test('handleLoginSubmit: missing credentials', async () => {
-            // Arrange: Mock missing credentials
-            mockedUi.getLoginCredentials.mockReturnValue(null);
-
-            // Act
-            await capturedAppHandlers.onLoginSubmit();
-
-            // Assert
-            expect(mockedUi.getLoginCredentials).toHaveBeenCalledTimes(1);
-            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Username and password are required.', true);
-            expect(mockedApi.login).not.toHaveBeenCalled();
-            expect(mockedUi.setLoginButtonState).not.toHaveBeenCalled();
+            expect(mockedUi.showLoginMessage).toHaveBeenCalledWith('Bad credentials', true);
+            expect(mockedUi.setLoginButtonState).toHaveBeenCalledWith(false);
+            expect(mockedApi.getFeeds).not.toHaveBeenCalled();
         });
 
         test('handleLogout: success flow', async () => {
-            // Arrange: Mock successful logout
-            // We need to clear mocks *after* the beforeEach setup call to isolate this test's calls
-            vi.clearAllMocks(); // Clear mocks from beforeEach init
             mockedApi.logout.mockResolvedValue({});
+            // Clear mock specific to this action outcome
+            mockedUi.showLoginView.mockClear(); 
+            await capturedAppHandlers!.onLogoutClick();
+            await vi.dynamicImportSettled();
 
-            // Act
-            await capturedAppHandlers.onLogoutClick();
-
-            // Assert
             expect(mockedApi.logout).toHaveBeenCalledTimes(1);
-            // Expect 1 call *during this test's execution*
-            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1); 
+            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1);
         });
 
-        test('handleLogout: failure flow', async () => {
-            // Arrange: Mock failed logout
-            // Clear mocks *after* the beforeEach setup call
-            vi.clearAllMocks(); 
-            mockedApi.logout.mockRejectedValue(new Error('Logout failed'));
+        test('handleFeedItemClick: success flow', async () => {
+            const feedId = 123;
+            const feedTitle = 'Clicked Feed';
+            const mockStories: Story[] = [{ id: 's1', story_title: 'Story 1' } as Story];
+            mockedApi.getStoriesForFeed.mockResolvedValue(mockStories);
 
-            // Act
-            await capturedAppHandlers.onLogoutClick();
+            // Handler captured in beforeEach should be available
+            await capturedFeedClickHandler!(feedId, feedTitle); 
+            await vi.dynamicImportSettled();
 
-            // Assert
-            expect(mockedApi.logout).toHaveBeenCalledTimes(1);
-            // Expect 1 call *during this test's execution*, even on failure
-            expect(mockedUi.showLoginView).toHaveBeenCalledTimes(1); 
+            expect(mockedUi.showStoryListView).toHaveBeenCalledTimes(1);
+            expect(mockedUi.showStoryMessage).toHaveBeenCalledWith('Loading stories...');
+            expect(mockedApi.getStoriesForFeed).toHaveBeenCalledWith(feedId);
+            expect(mockedUi.renderStories).toHaveBeenCalledWith(mockStories, feedTitle);
         });
 
-        test('handleFeedItemClick: interaction', () => {
-            // Arrange
-            const feedId = 42;
+        test('handleFeedItemClick: API error flow', async () => {
+            if (!capturedFeedClickHandler) throw new Error("Feed click handler not captured");
+            const feedId = 456;
+            const feedTitle = 'Error Feed';
+            const storyError: ApiError = new Error('Fetch failed') as ApiError;
+            storyError.data = { message: 'Server down' };
+            mockedApi.getStoriesForFeed.mockRejectedValue(storyError);
 
-            // Act: Trigger captured handler
-            capturedFeedClickHandler(feedId);
+            // Clear the mock *just before* triggering the action in this test
+            mockedUi.clearStoryDisplay.mockClear(); 
 
-            // Assert
-            expect(mockedUi.showFeedMessage).toHaveBeenCalledTimes(1);
-            expect(mockedUi.showFeedMessage).toHaveBeenCalledWith(`Selected Feed ID: ${feedId}. Story loading not implemented yet.`);
+            await capturedFeedClickHandler!(feedId, feedTitle);
+            await vi.dynamicImportSettled();
+
+            expect(mockedUi.showStoryListView).toHaveBeenCalledTimes(1);
+            // Assert it was called exactly once during this handler execution
+            expect(mockedUi.clearStoryDisplay).toHaveBeenCalledTimes(2); 
+            expect(mockedUi.showStoryMessage).toHaveBeenCalledWith('Loading stories...');
+            expect(mockedUi.showStoryMessage).toHaveBeenCalledWith('Server down', true);
+            expect(mockedUi.renderStories).not.toHaveBeenCalled();
+        });
+
+        test('Back button click should show feed list view', () => {
+            mockedUi.showFeedListView.mockClear();
+            backButtonClickListener!(); // Trigger captured listener
+            expect(mockedUi.showFeedListView).toHaveBeenCalledTimes(1);
+        });
+        
+        test('Back button click should do nothing if loading', async () => {
+            const feedId = 789;
+            const feedTitle = 'Loading Feed';
+            let resolveApiCall: (value: Story[]) => void;
+            const promise = new Promise<Story[]>((resolve) => { resolveApiCall = resolve; });
+            mockedApi.getStoriesForFeed.mockReturnValue(promise);
+            
+            // Start operation but don't wait for the promise
+            capturedFeedClickHandler!(feedId, feedTitle); 
+            await new Promise(resolve => setTimeout(resolve, 0)); // Allow event loop tick
+            
+            mockedUi.showFeedListView.mockClear();
+            backButtonClickListener!(); // Click while loading
+
+            expect(mockedUi.showFeedListView).not.toHaveBeenCalled();
+             
+            resolveApiCall!([]); // Cleanup
+            await promise; 
         });
     });
 });

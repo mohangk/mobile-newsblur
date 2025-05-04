@@ -3,7 +3,7 @@
 // Import necessary functions from API and UI modules
 import * as api from './api';
 // Re-import necessary types specifically FROM ./types
-import type { Feed, FeedMap, FeedResponse } from './types';
+import type { Feed, FeedMap, FeedResponse, Story } from './types';
 // Import the whole ui module
 import * as ui from './ui';
 
@@ -119,11 +119,29 @@ async function handleLogout(): Promise<void> {
 }
 
 /** Handles clicking on a specific feed item */
-function handleFeedItemClick(feedId: string | number): void {
+async function handleFeedItemClick(feedId: string | number, feedTitle: string): Promise<void> {
     if (isLoading) return;
-    console.log(`App: Feed item clicked: ${feedId}`);
-    // TODO: Implement actual story loading/display logic
-    ui.showFeedMessage(`Selected Feed ID: ${feedId}. Story loading not implemented yet.`);
+    isLoading = true;
+    console.log(`App: Feed item clicked: ${feedId} ('${feedTitle}')`);
+
+    ui.showStoryListView(); // Show the view container immediately
+    ui.clearStoryDisplay(); // Clear previous content/messages
+    ui.showStoryMessage('Loading stories...'); // Show loading message
+
+    try {
+        const stories: Story[] = await api.getStoriesForFeed(feedId);
+        console.log(`App: Received ${stories.length} stories for feed ${feedId}`);
+        ui.renderStories(stories, feedTitle);
+        // Message cleared by renderStories if successful
+    } catch (error: any) {
+        console.error(`App: Error fetching stories for feed ${feedId}:`, error);
+        const message = error.data?.message || error.message || 'Failed to load stories.';
+        ui.clearStoryDisplay(); // Clear partial content potentially
+        ui.showStoryMessage(message, true);
+        // Keep the story view visible to show the error
+    } finally {
+        isLoading = false;
+    }
 }
 
 // --- Initialization ---
@@ -132,13 +150,29 @@ function initializeApp(): void {
     console.log("App: Initializing...");
 
     // Register the click handler with the UI module first
-    ui.setFeedItemClickHandler(handleFeedItemClick);
+    // Note: ui.setFeedItemClickHandler expects (id, title) => void
+    ui.setFeedItemClickHandler((feedId, feedTitle) => {
+        handleFeedItemClick(feedId, feedTitle); // Call the async function
+    });
 
     // Initialize the UI, passing the handlers for form/button events
     ui.initializeUI({
         onLoginSubmit: handleLoginSubmit, // Pass the function reference
         onLogoutClick: handleLogout       // Pass the function reference
     });
+
+    // Add listener for the back button
+    const backButton = document.getElementById('back-to-feeds-button');
+    if (backButton) {
+        backButton.addEventListener('click', () => {
+            if (isLoading) return; // Don't switch view if something is loading
+            console.log("App: Back button clicked.");
+            ui.showFeedListView(); // Switch back to feed list
+        });
+    } else {
+        console.warn("App: Back button not found during initialization.");
+    }
+
 
     // Initial check to see if user is already logged in
     checkAuthAndLoadView();

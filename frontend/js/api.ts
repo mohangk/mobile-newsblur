@@ -160,10 +160,13 @@ export async function getStoriesForFeed(feedId: string | number): Promise<Story[
         throw new Error("Feed ID is required to fetch stories.");
     }
     console.log(`API: Fetching stories for feed ${feedId}...`);
-    const data = await apiFetch<StoryResponse>(`/reader/feed/${feedId}`);
+    // Request stories ordered by newest, but still sort client-side for safety
+    const data = await apiFetch<StoryResponse>(`/reader/feed/${feedId}?order=newest`);
     const storiesMap = data.stories || {};
     const storiesArray = Object.values(storiesMap);
-    // Sort by date descending (newest first)
+    // Explicitly sort client-side because Object.values() does not guarantee order
+    // preservation when converting the API's story map object to an array.
+    // This ensures newest stories appear first, regardless of JS engine behavior.
     storiesArray.sort((a: Story, b: Story) => { // Explicitly type a and b
         // Handle potential undefined or null dates if necessary, though API should provide them
         const dateA = new Date(a.story_date).getTime();

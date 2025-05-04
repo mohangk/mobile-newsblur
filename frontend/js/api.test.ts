@@ -182,8 +182,8 @@ describe('API Functions', () => {
 
             expect(globalThis.fetch).toHaveBeenCalledTimes(1);
             expect(globalThis.fetch).toHaveBeenCalledWith(
-                `${BASE_URL}/proxy/reader/feed/${feedId}`, 
-                expect.objectContaining({ // Only check credentials for default GET
+                `${BASE_URL}/proxy/reader/feed/${feedId}?order=newest`, // Add ?order=newest
+                expect.objectContaining({
                     credentials: 'include'
                 })
             );
