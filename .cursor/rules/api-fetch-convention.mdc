@@ -1,0 +1,28 @@
+---
+description: 
+globs: api*
+alwaysApply: false
+---
+# API Call Convention: Use `apiFetch`
+
+To ensure consistency, proper error handling, and correct interaction with the backend proxy, all frontend API calls to the worker should use the `apiFetch` helper function defined in [frontend/js/api.ts](mdc:frontend/js/api.ts).
+
+## Rationale
+
+The `apiFetch` function:
+
+-   Prepends the necessary `/proxy` prefix to the endpoint.
+-   Includes default options like `credentials: 'include'`.
+-   Handles standard JSON parsing.
+-   Provides consistent error handling, throwing an `ApiError` (defined in [frontend/js/types.ts](mdc:frontend/js/types.ts)) with status code and parsed error messages for non-OK responses or network issues.
+
+## Usage
+
+Import `apiFetch` and call it with the specific endpoint (e.g., `/api/login`, `/reader/feeds`) and necessary options (like `method: 'POST'`). Specify the expected response type using generics (e.g., `apiFetch<LoginResponse>(...)`).
+
+## Examples
+
+-   See `login()`, `logout()`, `getFeeds()`, `getStoriesForFeed()` in [frontend/js/api.ts](mdc:frontend/js/api.ts) for correct usage.
+-   The `getStoryContent()` function was initially implemented using raw `fetch` but was later refactored to use `apiFetch` to adhere to this convention.
+
+**Do not use the global `fetch` function directly for calls intended for the backend worker.**

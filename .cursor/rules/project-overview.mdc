@@ -1,0 +1,15 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Project Overview
+
+This is a monorepo containing a mobile-focused NewsBlur feed reader application.
+
+## Structure
+
+-   **Backend:** A Cloudflare Worker using Hono and TypeScript located in `src/`. Configuration is in `wrangler.toml`. It acts as a secure proxy to the NewsBlur API. See [src/index.ts](mdc:src/index.ts) and [wrangler.toml](mdc:wrangler.toml).
+-   **Frontend:** A single-page application using vanilla TypeScript, HTML, and Tailwind CSS, located in the `frontend/` directory.
+
+See the main [README.md](mdc:README.md) for detailed setup and development instructions.

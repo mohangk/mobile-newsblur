@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Frontend Application Structure
+
+The frontend code is located in the `frontend/` directory.
+
+## Key Files:
+
+-   **HTML:** [frontend/index.html](mdc:frontend/index.html) is the main HTML file containing the different view containers (e.g., `#login-view`, `#feed-list-view`, `#story-list-view`).
+-   **Main Logic:** [frontend/js/app.ts](mdc:frontend/js/app.ts) orchestrates the application flow, handles user interactions by attaching event listeners, manages application state (like `isLoading`), and coordinates between the UI and API layers.
+-   **UI Logic:** [frontend/js/ui.ts](mdc:frontend/js/ui.ts) contains functions dedicated to DOM manipulation, such as showing/hiding views, rendering lists (feeds, stories), and displaying messages. It uses query selectors to target elements in `index.html`.
+-   **API Calls:** [frontend/js/api.ts](mdc:frontend/js/api.ts) wraps `fetch` calls (primarily using the `apiFetch` helper) to communicate with the backend proxy worker. It defines functions like `login`, `getFeeds`, `getStoriesForFeed`, `getStoryContent`.
+-   **Types:** [frontend/js/types.ts](mdc:frontend/js/types.ts) defines shared TypeScript interfaces and types (`Feed`, `Story`, `StoryContent`, `ApiError`, etc.) used across the frontend modules.
+-   **Styling:** Tailwind CSS is used. Configuration is in [frontend/tailwind.config.js](mdc:frontend/tailwind.config.js), input is [frontend/css/input.css](mdc:frontend/css/input.css), and output is [frontend/css/style.css](mdc:frontend/css/style.css).
+-   **Dependencies & Scripts:** Frontend dependencies and scripts (like `dev`, `test`, `build:css`) are defined in [frontend/package.json](mdc:frontend/package.json).

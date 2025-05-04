@@ -1,0 +1,21 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Frontend Testing Guide
+
+Frontend TypeScript modules are tested using [Vitest](mdc:https:/vitest.dev) and [JSDOM](mdc:https:/github.com/jsdom/jsdom).
+
+## Key Components:
+
+-   **Test Runner:** Vitest (run via `npm test` in the `frontend/` directory - see [frontend/package.json](mdc:frontend/package.json)).
+-   **Environment:** JSDOM simulates a browser DOM environment within Node.js.
+-   **Setup:** [frontend/vitest.setup.js](mdc:frontend/vitest.setup.js) configures the JSDOM environment before tests run.
+-   **Test Files:** Located alongside the code they test:
+    -   [frontend/js/app.test.ts](mdc:frontend/js/app.test.ts) (Tests main application logic)
+    -   [frontend/js/ui.test.ts](mdc:frontend/js/ui.test.ts) (Tests DOM manipulation functions)
+    -   [frontend/js/api.test.ts](mdc:frontend/js/api.test.ts) (Tests API wrapper functions)
+-   **Mocking:** `vi.mock()` is used to mock module dependencies (e.g., mocking `ui.ts` and `api.ts` within `app.test.ts`) and `vi.fn()` or `vi.spyOn()` is used for mocking functions like `fetch`.
+
+Refer to the Testing section in the main [README.md](mdc:README.md) for commands.
