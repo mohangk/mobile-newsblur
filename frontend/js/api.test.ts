@@ -1,9 +1,15 @@
 // frontend/js/api.test.js
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { login, logout, getFeeds, checkAuth, getStoriesForFeed } from './api'; // Import functions to test
+import { login, logout, getFeeds, checkAuth, getStoriesForFeed } from './api'; // Removed getStoryContent
+import type { Feed, Story, FeedResponse, StoryResponse, ApiError } from './types'; // Removed StoryContent
 
 // --- Mocking global fetch ---
+// We mock the global `fetch` function rather than the internal `apiFetch` helper.
+// This allows us to test the full behavior of the exported API functions
+// (e.g., `login`, `getFeeds`), including how they utilize `apiFetch`
+// (URL construction, option merging, error handling, response parsing),
+// isolating the tests only from the actual network call.
 globalThis.fetch = vi.fn();
 
 const BASE_URL = 'http://localhost:8787'; // Define base URL for expectations
@@ -161,74 +167,84 @@ describe('API Functions', () => {
         });
     });
 
-    // ***** Updated describe block for getStoriesForFeed *****
     describe('getStoriesForFeed', () => {
         beforeEach(() => {
             vi.mocked(globalThis.fetch).mockClear();
         });
 
         it('should throw an error if feedId is not provided', async () => {
-            // Pass an empty string which is falsy but matches the type signature
             await expect(getStoriesForFeed("")).rejects.toThrow('Feed ID is required');
             expect(globalThis.fetch).not.toHaveBeenCalled();
         });
 
         it('should call fetch with the correct feed URL', async () => {
-            const feedId = 12345;
-            const mockStoriesData = { stories: [{ id: 's1', title: 'Story 1' }] }; 
+            const feedId = '12345';
+            // Mock response with stories as an array
+            const mockStoriesData = { stories: [ { id: 's1', story_title: 'Story 1', story_content: '', story_authors: '', story_date:'' } ] }; // Provide minimal Story data
             vi.mocked(globalThis.fetch).mockResolvedValue({ ok: true, status: 200, json: async () => mockStoriesData } as Response); 
 
             await getStoriesForFeed(feedId);
 
             expect(globalThis.fetch).toHaveBeenCalledTimes(1);
             expect(globalThis.fetch).toHaveBeenCalledWith(
-                `${BASE_URL}/proxy/reader/feed/${feedId}?order=newest`, // Add ?order=newest
-                expect.objectContaining({
-                    credentials: 'include'
-                })
+                `${BASE_URL}/proxy/reader/feed/${feedId}?order=newest`,
+                expect.objectContaining({ credentials: 'include' })
             );
         });
 
-        it('should return the stories array on success', async () => {
-            const feedId = 5678;
-            const mockStoriesMap = { 's1': { id: 's1' }, 's2': { id: 's2' } }; // Mock the map structure
-            vi.mocked(globalThis.fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({ stories: mockStoriesMap }) } as Response);
+        it('should return the sorted stories array on success', async () => {
+            const feedId = '5678';
+            // Mock stories array directly
+            const mockStoriesArray = [
+                { id: 's1', story_date: '2025-01-01T10:00:00Z', story_title:'Old', story_content:'', story_authors:'' }, 
+                { id: 's2', story_date: '2025-01-01T12:00:00Z', story_title:'New', story_content:'', story_authors:'' }
+            ]; 
+            vi.mocked(globalThis.fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({ stories: mockStoriesArray }) } as Response);
 
             const stories = await getStoriesForFeed(feedId);
 
-            // Expect an array (sorted), possibly checking length or specific items
             expect(Array.isArray(stories)).toBe(true);
             expect(stories.length).toBe(2);
-            // Note: Order might vary if dates aren't mocked, so don't rely on exact order unless dates are set
-            expect(stories).toEqual(expect.arrayContaining([ { id: 's1' }, { id: 's2' } ])); 
+            // Check sorting (newest first)
+            expect(stories[0].story_title).toBe('New'); 
+            expect(stories[1].story_title).toBe('Old');
         });
 
-        it('should return an empty array if stories property is missing', async () => {
-            const feedId = 999;
-            vi.mocked(globalThis.fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({ message: 'ok' }) } as Response); // No stories property
-            
-            const stories = await getStoriesForFeed(feedId);
-            
+        it('should return an empty array if stories array is missing or null', async () => {
+            const feedId = '999';
+            // Test with missing stories property
+            vi.mocked(globalThis.fetch).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ message: 'ok' }) } as Response);
+            let stories = await getStoriesForFeed(feedId);
             expect(stories).toEqual([]);
+            
+            // Test with null stories property
+             vi.mocked(globalThis.fetch).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ stories: null }) } as Response);
+             stories = await getStoriesForFeed(feedId);
+             expect(stories).toEqual([]);
         });
 
-        it('should throw an error if fetch fails (network error)', async () => {
-            const feedId = 111;
+        it('should throw ApiError if fetch fails (network error)', async () => {
+            const feedId = '111';
             const error = new Error('API Failed');
             vi.mocked(globalThis.fetch).mockRejectedValue(error);
-
             await expect(getStoriesForFeed(feedId)).rejects.toThrow('Network error or unexpected issue');
         });
         
-        it('should throw an error if api response is not ok', async () => {
-            const feedId = 222;
+        it('should throw ApiError if api response is not ok', async () => {
+            const feedId = '222';
+            const errorMessage = 'Feed Not Found';
             vi.mocked(globalThis.fetch).mockResolvedValue({
                 ok: false,
                 status: 404,
-                json: async () => ({ message: 'Not Found' }),
+                json: async () => ({ message: errorMessage }),
             } as Response);
             
-            await expect(getStoriesForFeed(feedId)).rejects.toThrow('Not Found');
+            await expect(getStoriesForFeed(feedId)).rejects.toThrow(errorMessage);
+             try {
+                 await getStoriesForFeed(feedId);
+             } catch (e) {
+                 expect((e as ApiError).status).toBe(404);
+             }
         });
     });
 }); 

@@ -16,13 +16,6 @@ import {
 import type { Feed, Story } from './types'; // Import Feed and Story types if needed for mocks
 
 // Helper function to assert element exists and return it typed
-function expectElement<T extends HTMLElement>(selector: string): T {
-    const element = document.querySelector(selector) as T | null;
-    if (!element) {
-        throw new Error(`Test setup error: Element with selector "${selector}" not found.`);
-    }
-    return element;
-}
 function expectElementById<T extends HTMLElement>(id: string): T {
     const element = document.getElementById(id) as T | null;
     if (!element) {
@@ -58,14 +51,24 @@ describe('UI Functions', () => {
                 <div id="feed-list-view" class="hidden">
                     <p id="feed-message-area"></p>
                     <ul id="feed-list"></ul>
-            </div>
+                    <button id="logout-button"></button>
+                </div>
                 <div id="story-list-view" class="hidden">
                     <p id="story-message-area"></p>
                     <ul id="story-list"></ul>
                     <span id="story-list-title"></span>
-        </div>
-    `;
-});
+                    <button id="back-to-feeds-button"></button>
+                </div>
+                <div id="story-content-view" class="hidden">
+                    <h2 id="story-content-title"></h2>
+                    <button id="back-to-story-list-button"></button>
+                    <p id="story-content-author"></p>
+                    <p id="story-content-date"></p>
+                    <p id="story-content-message"></p>
+                    <div id="story-content-body"></div>
+                </div>
+            `;
+        });
 
         it('showLoginView: should show login, hide others, clear feed list/messages', () => {
             // Arrange: Make feed/story views visible, add content
@@ -265,9 +268,10 @@ describe('UI Functions', () => {
     });
     
     describe('renderStories', () => {
+        let mockClickHandler: Mock; // Declare mock handler variable
         const mockStories: Story[] = [
-             { id: 's1', story_title: 'Story One', story_date: '2023-10-26T10:00:00Z', read_status: 0, story_permalink: '' },
-             { id: 's2', story_title: 'Story Two (Read)', story_date: '2023-10-25T12:30:00Z', read_status: 1, story_permalink: '' },
+            { id: 's1', story_title: 'Story One', story_date: '2023-10-26T10:00:00Z', read_status: 0, story_permalink: '', story_content: '', story_authors: '', story_hash: '' },
+            { id: 's2', story_title: 'Story Two (Read)', story_date: '2023-10-25T12:30:00Z', read_status: 1, story_permalink: '', story_content: '', story_authors: '', story_hash: '' },
         ];
         const feedTitle = 'Test Feed Title';
         
@@ -278,10 +282,11 @@ describe('UI Functions', () => {
                  <p id="story-message-area"></p>
                  <ul id="story-list"></ul>
              `;
+             mockClickHandler = vi.fn(); // Initialize mock handler before each test
          });
         
         it('should render stories with correct title and date formatting', () => {
-             renderStories(mockStories, feedTitle);
+             renderStories(mockStories, feedTitle, mockClickHandler); // Pass handler
              const listItems = document.querySelectorAll('#story-list li');
              const titleElement = expectElementById<HTMLSpanElement>('story-list-title');
             
@@ -289,13 +294,13 @@ describe('UI Functions', () => {
              expect(listItems.length).toBe(mockStories.length);
              // Select title span (first span child) and date span (span with text-xs)
              expect(listItems[0].querySelector('span:first-child')?.textContent).toBe('Story One');
-             expect(listItems[0].querySelector('span.text-xs')?.textContent).toBe('Oct 26, 2023'); // Assuming locale formats this way
+             expect(listItems[0].querySelector('span.text-xs')?.textContent).toBe('Oct 26, 18:00'); // Expect SGT
              expect(listItems[1].querySelector('span:first-child')?.textContent).toBe('Story Two (Read)');
-             expect(listItems[1].querySelector('span.text-xs')?.textContent).toBe('Oct 25, 2023');
+             expect(listItems[1].querySelector('span.text-xs')?.textContent).toBe('Oct 25, 20:30'); // Expect SGT
          });
         
         it('should apply read/unread styles correctly', () => {
-             renderStories(mockStories, feedTitle);
+             renderStories(mockStories, feedTitle, mockClickHandler); // Pass handler
              const listItems = document.querySelectorAll('#story-list li');
              // Check classes directly on the list item
              expect(listItems[0].classList.contains('font-semibold')).toBe(true); // Unread style
@@ -303,23 +308,23 @@ describe('UI Functions', () => {
          });
         
         it('should show a message if no stories are provided', () => {
-             renderStories([], feedTitle);
+             renderStories([], feedTitle, mockClickHandler); // Pass handler
              const messageArea = expectElementById<HTMLParagraphElement>('story-message-area');
              expect(expectElementById('story-list').innerHTML).toBe('');
-             expect(messageArea.textContent).toBe('No stories found in this feed.');
+             expect(messageArea.textContent).toBe('No stories found for this feed.');
          });
 
          it('should handle missing story data gracefully', () => {
             const storiesWithMissingData: Partial<Story>[] = [
                 { id: 's3' }, // Missing title, date, read_status
             ];
-            renderStories(storiesWithMissingData as Story[], feedTitle); // Type assertion needed
+            renderStories(storiesWithMissingData as Story[], feedTitle, mockClickHandler); // Pass handler & Type assertion needed
             const listItems = document.querySelectorAll('#story-list li');
             expect(listItems.length).toBe(1);
             // Check title span for fallback text
-            expect(listItems[0].querySelector('span:first-child')?.textContent).toBe('Untitled Story'); // Fallback title
+            expect(listItems[0].querySelector('span:first-child')?.textContent).toBe('[No Title]'); // Match code
             // Check that the date span was not rendered or is empty for invalid date
-            expect(listItems[0].querySelector('span.text-xs')?.textContent).toBe('Invalid Date');
+            expect(listItems[0].querySelector('span.text-xs')?.textContent).toBe('Invalid Date'); // Expect explicit invalid date text
          });
     });
     

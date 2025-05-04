@@ -73,6 +73,24 @@
             </ul>
         </div>
 
+        <!-- Story Content View (Hidden by default) -->
+        <div id="story-content-view" class="hidden p-4 bg-white dark:bg-gray-800 rounded shadow">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="story-content-title" class="text-xl font-bold text-gray-800 dark:text-gray-200 truncate mr-2">Story Title</h2>
+                <button id="back-to-story-list-button" class="bg-gray-500 hover:bg-gray-600 text-white text-sm font-semibold py-1 px-3 rounded focus:outline-none focus:shadow-outline flex-shrink-0">
+                   &larr; Back
+                </button>
+            </div>
+             <p id="story-content-author" class="text-sm text-gray-600 dark:text-gray-400 mb-1">Author Name</p>
+             <p id="story-content-date" class="text-xs text-gray-500 dark:text-gray-400 mb-4">Published Date</p>
+             <!-- Placeholder for story loading/error messages within the content view -->
+             <p id="story-content-message" class="text-center text-gray-500 dark:text-gray-400 mb-4 h-5 hidden"></p>
+             <!-- Story Body Content -->
+             <div id="story-content-body" class="prose dark:prose-invert max-w-none">
+                 <!-- Story HTML content will be dynamically inserted here -->
+             </div>
+        </div>
+
     </div><!-- /#app -->
 
     <!-- Link to the main TypeScript file as a module -->

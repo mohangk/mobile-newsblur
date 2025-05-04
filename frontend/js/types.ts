@@ -37,16 +37,15 @@ export interface Story {
     story_title: string;
     story_permalink: string;
     story_date: string; // ISO date string
-    story_content?: string; // Optional, might not always be fetched
+    story_content: string; // Made required based on API response
+    story_authors: string; // Added based on API response
     read_status?: number; // 0 or 1
-    // Add other relevant story properties
+    story_hash: string; // Added based on API response (was implicitly there via StoryMap key)
+    // Add other relevant story properties if needed from curl output
 }
-
-/** Map of story IDs to Story objects */
-export type StoryMap = Record<string, Story>;
 
 /** Structure for the /reader/feed/{feedId} response */
 export interface StoryResponse extends BaseResponse {
-    stories: StoryMap;
+    stories: Story[]; // Changed from StoryMap to Story[] based on API response
     // Add other relevant fields from this endpoint
 } 

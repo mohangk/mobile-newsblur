@@ -74,7 +74,7 @@ The frontend TypeScript code (`frontend/js/`) has been modularized:
 
 *   **Test Files:** Located alongside the modules they test (e.g., `app.test.ts`, `ui.test.ts`, `api.test.ts`).
 *   **Setup:** `vitest.setup.js` configures the JSDOM environment before tests run.
-*   **Mocks:** `vi.mock()` is used extensively in `app.test.ts` to isolate the `app.ts` logic by mocking the `api.ts` and `ui.ts` modules.
+*   **Mocks:** `vi.mock()` is used extensively in `app.test.ts` to isolate the `app.ts` logic by mocking the `api.ts` and `ui.ts` modules. For API testing (`api.test.ts`), the global `fetch` function is mocked using `vi.fn()`. This approach allows testing the full behavior of exported API functions (like `login()`, `getFeeds()`) and their internal use of the `apiFetch` helper (URL construction, error handling, etc.), isolating the tests only from the actual network layer.
 
 **Running Frontend Tests:**
 
@@ -121,7 +121,9 @@ To run the full application locally, you'll need **three terminals** running con
 
 ## Frontend Interaction Notes
 
-*   The TypeScript code in `frontend/js/app.ts` makes API calls to the backend worker URL, prefixing all NewsBlur API paths with `/proxy` (e.g., `/proxy/api/login`, `/proxy/reader/feeds`).
+*   The backend Cloudflare Worker (in `src/`) acts as a proxy to the official NewsBlur API (`https://newsblur.com/api`). This proxy is necessary to handle CORS issues and securely manage the NewsBlur session cookie (stored in Cloudflare KV) required for authentication.
+*   The frontend TypeScript code in `frontend/js/app.ts` makes API calls *to the backend worker URL* (e.g., `http://localhost:8787`). The worker then forwards these requests to NewsBlur.
+*   All calls targeting the NewsBlur API via the worker should be prefixed with `/proxy` (e.g., `/proxy/api/login`, `/proxy/reader/feeds`). This prefixing, along with adding necessary credentials, is handled automatically by the `apiFetch` helper function in [frontend/js/api.ts](mdc:frontend/js/api.ts).
 *   Authentication relies on the `proxy_session_id` cookie set by the worker and automatically handled by the browser (requires correct `SameSite`, `Secure`, and CORS configuration).
 
 ## Deploying

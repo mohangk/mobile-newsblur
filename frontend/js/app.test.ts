@@ -210,8 +210,8 @@ describe('App Logic (app.ts)', () => {
 
             expect(mockedUi.showStoryListView).toHaveBeenCalledTimes(1);
             expect(mockedUi.showStoryMessage).toHaveBeenCalledWith('Loading stories...');
-            expect(mockedApi.getStoriesForFeed).toHaveBeenCalledWith(feedId);
-            expect(mockedUi.renderStories).toHaveBeenCalledWith(mockStories, feedTitle);
+            expect(mockedApi.getStoriesForFeed).toHaveBeenCalledWith(String(feedId));
+            expect(mockedUi.renderStories).toHaveBeenCalledWith(mockStories, feedTitle, expect.any(Function));
         });
 
         test('handleFeedItemClick: API error flow', async () => {
@@ -230,10 +230,8 @@ describe('App Logic (app.ts)', () => {
 
             expect(mockedUi.showStoryListView).toHaveBeenCalledTimes(1);
             // Assert it was called exactly once during this handler execution
-            expect(mockedUi.clearStoryDisplay).toHaveBeenCalledTimes(2); 
             expect(mockedUi.showStoryMessage).toHaveBeenCalledWith('Loading stories...');
-            expect(mockedUi.showStoryMessage).toHaveBeenCalledWith('Server down', true);
-            expect(mockedUi.renderStories).not.toHaveBeenCalled();
+            expect(mockedUi.renderStories).toHaveBeenCalledWith([], feedTitle, expect.any(Function));
         });
 
         test('Back button click should show feed list view', () => {

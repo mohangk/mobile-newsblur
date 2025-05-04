@@ -1,5 +1,5 @@
 // frontend/js/ui.ts
-import type { Feed, Story } from './types'; // Import Feed AND Story types
+import type { Feed, Story } from './types'; // Remove StoryContent
 
 // --- Types ---
 interface LoginCredentials {
@@ -20,8 +20,42 @@ let feedItemClickHandler: FeedItemClickHandler | null = null;
 
 // --- Internal Helper ---
 /** Generic helper to get typed elements by ID */
-function getElement<T extends HTMLElement>(id: string): T | null {
-    return document.getElementById(id) as T | null;
+function getElement<T extends HTMLElement>(id: string): T {
+    const element = document.getElementById(id);
+    if (!element) {
+        throw new Error(`UI Error: Element with ID '${id}' not found.`);
+    }
+    return element as T;
+}
+
+/**
+ * Formats an ISO date string (expected from Story.story_date) into 'MMM DD, HH:MM' (Singapore Time).
+ * Returns 'Invalid Date' if the input string cannot be parsed as a valid date.
+ * @param {string} dateString - The date string to format (expected ISO 8601 format).
+ * @returns {string} The formatted date string (e.g., 'Oct 26, 18:00') or 'Invalid Date'.
+ */
+function formatDateString(dateString: string): string {
+    try {
+        const date = new Date(dateString);
+        // Check if the date is valid
+        if (isNaN(date.getTime())) {
+            return 'Invalid Date'; 
+        } else {
+            // Use options for specific, consistent formatting
+            const options: Intl.DateTimeFormatOptions = { 
+                month: 'short', 
+                day: 'numeric', 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: false, // Use 24-hour format
+                timeZone: 'Asia/Singapore' // Specify SGT timezone for display
+            };
+            // The locale 'en-US' mainly affects month name, not the time itself here
+            return date.toLocaleString('en-US', options); 
+        }
+    } catch { 
+        return 'Invalid Date'; 
+    }
 }
 
 // --- HTML Element ID Reference ---
@@ -70,21 +104,22 @@ function setVisibility(element: HTMLElement | null, visible: boolean): void {
 
 /** Show the login view and hide the feed list view */
 export function showLoginView(): void {
-    // Use specific types and handle potential nulls via helper
     const loginView = getElement<HTMLDivElement>('login-view');
     const feedListView = getElement<HTMLDivElement>('feed-list-view');
     const storyListView = getElement<HTMLDivElement>('story-list-view');
-    const feedListElement = getElement<HTMLUListElement>('feed-list');
-    const feedMessageArea = getElement<HTMLParagraphElement>('feed-message-area');
+    const storyContentView = getElement<HTMLDivElement>('story-content-view');
     const loginMessageArea = getElement<HTMLParagraphElement>('login-message-area');
 
-    setVisibility(loginView, true);
-    setVisibility(feedListView, false);
-    setVisibility(storyListView, false);
-    // Clear dynamic content when switching views
-    if (feedListElement) feedListElement.innerHTML = '';
-    if (feedMessageArea) feedMessageArea.textContent = '';
-    if (loginMessageArea) loginMessageArea.textContent = '';
+    loginView.classList.remove('hidden');
+    feedListView.classList.add('hidden');
+    storyListView.classList.add('hidden');
+    storyContentView.classList.add('hidden');
+    clearFeedDisplay();
+    clearStoryDisplay();
+    if (loginMessageArea) {
+        loginMessageArea.textContent = '';
+        loginMessageArea.classList.add('hidden');
+    }
 }
 
 /** Show the feed list view and hide the login view */
@@ -92,19 +127,26 @@ export function showFeedListView(): void {
     const loginView = getElement<HTMLDivElement>('login-view');
     const feedListView = getElement<HTMLDivElement>('feed-list-view');
     const storyListView = getElement<HTMLDivElement>('story-list-view');
+    const storyContentView = getElement<HTMLDivElement>('story-content-view');
     const loginMessageArea = getElement<HTMLParagraphElement>('login-message-area');
-    const passwordInput = getElement<HTMLInputElement>('password');
     const usernameInput = getElement<HTMLInputElement>('username');
+    const passwordInput = getElement<HTMLInputElement>('password');
     const loginButton = getElement<HTMLButtonElement>('login-button');
 
-    setVisibility(loginView, false);
-    setVisibility(feedListView, true);
-    setVisibility(storyListView, false);
-    // Clear form fields and messages when switching views
-    if (loginMessageArea) loginMessageArea.textContent = '';
-    if (passwordInput) passwordInput.value = '';
+    loginView.classList.add('hidden');
+    feedListView.classList.remove('hidden');
+    storyListView.classList.add('hidden');
+    storyContentView.classList.add('hidden');
+    
+    if (loginMessageArea) {
+        loginMessageArea.textContent = '';
+        loginMessageArea.classList.add('hidden');
+    }
     if (usernameInput) usernameInput.value = '';
+    if (passwordInput) passwordInput.value = '';
     if (loginButton) loginButton.disabled = false;
+    
+    clearStoryDisplay();
 }
 
 /** Show the story list view and hide others */
@@ -112,15 +154,22 @@ export function showStoryListView(): void {
     const loginView = getElement<HTMLDivElement>('login-view');
     const feedListView = getElement<HTMLDivElement>('feed-list-view');
     const storyListView = getElement<HTMLDivElement>('story-list-view');
-
-    setVisibility(loginView, false);
-    setVisibility(feedListView, false);
-    setVisibility(storyListView, true);
-
-    // Clear dynamic content from other views (optional, but good practice)
-    // clearFeedDisplay(); // Already hidden, probably not needed
+    const storyContentView = getElement<HTMLDivElement>('story-content-view');
     const loginMessageArea = getElement<HTMLParagraphElement>('login-message-area');
-    if (loginMessageArea) loginMessageArea.textContent = '';
+    const usernameInput = getElement<HTMLInputElement>('username');
+    const passwordInput = getElement<HTMLInputElement>('password');
+
+    loginView.classList.add('hidden');
+    feedListView.classList.add('hidden');
+    storyListView.classList.remove('hidden');
+    storyContentView.classList.add('hidden');
+    
+    if (loginMessageArea) {
+        loginMessageArea.textContent = '';
+        loginMessageArea.classList.add('hidden');
+    }
+    if (usernameInput) usernameInput.value = '';
+    if (passwordInput) passwordInput.value = '';
 }
 
 /** Displays a message in the login message area */
@@ -159,22 +208,17 @@ export function clearFeedDisplay(): void {
 export function clearStoryDisplay(): void {
      const storyListElement = getElement<HTMLUListElement>('story-list');
      const storyMessageArea = getElement<HTMLParagraphElement>('story-message-area');
-     // Clear list by removing child nodes for potentially better JSDOM compatibility
      if (storyListElement) {
         while (storyListElement.firstChild) {
             storyListElement.removeChild(storyListElement.firstChild);
         }
      }
      if (storyMessageArea) storyMessageArea.textContent = '';
-     // Clear title (optional)
-     // const storyTitleElement = getElement<HTMLSpanElement>('story-list-title');
-     // if (storyTitleElement) storyTitleElement.textContent = '';
 }
 
 /** Disables or enables the login button */
 export function setLoginButtonState(disabled: boolean): void {
      const loginButton = getElement<HTMLButtonElement>('login-button');
-     // Use optional chaining for potentially null button
      if (loginButton) loginButton.disabled = disabled;
 }
 
@@ -185,9 +229,8 @@ export function getLoginCredentials(): LoginCredentials | null {
     const usernameInput = getElement<HTMLInputElement>('username');
     const passwordInput = getElement<HTMLInputElement>('password');
     const username = usernameInput?.value.trim();
-    const password = passwordInput?.value; // Don't trim password
+    const password = passwordInput?.value;
 
-    // Return null if either is missing/empty to signal invalid input
     if (!username || !password) {
         return null;
     }
@@ -205,13 +248,12 @@ export function initializeUI(handlers: AppHandlers): void {
     const logoutButton = getElement<HTMLButtonElement>('logout-button');
 
     loginForm?.addEventListener('submit', (event) => {
-        event.preventDefault(); // Prevent default form submission
-        handlers.onLoginSubmit(); // Call the async handler from app.ts
+        event.preventDefault();
+        handlers.onLoginSubmit();
     });
 
     logoutButton?.addEventListener('click', handlers.onLogoutClick);
 
-    // Any other one-time UI setup could go here
     console.log('UI Initialized with handlers.');
 }
 
@@ -231,26 +273,21 @@ export function renderFeedList(feeds: Feed[] | null | undefined): void {
         return;
     }
 
-    // Create and append list items
     feeds.forEach((feed: Feed) => {
         const listItem = document.createElement('li') as HTMLLIElement;
         listItem.className = 'flex items-center py-3 px-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0';
         listItem.dataset.feedId = String(feed.id);
         listItem.dataset.feedTitle = feed.feed_title || 'Untitled Feed';
 
-        // Calculate unread count safely, defaulting to 0
         const unreadCount = (feed.ps ?? 0) + (feed.nt ?? 0) + (feed.ng ?? 0);
 
-        // Favicon
         const faviconUrl = feed.favicon_url || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
         const faviconImg = document.createElement('img') as HTMLImageElement;
         faviconImg.src = faviconUrl;
         faviconImg.alt = '';
         faviconImg.className = 'w-5 h-5 mr-3 rounded-sm flex-shrink-0 object-contain';
-        // Ensure onerror is typed correctly (it's an event handler)
         faviconImg.onerror = () => { faviconImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; };
 
-        // Title
         const titleSpan = document.createElement('span') as HTMLSpanElement;
         titleSpan.className = 'flex-grow font-medium text-gray-700 dark:text-gray-200 truncate';
         titleSpan.textContent = feed.feed_title || 'Untitled Feed';
@@ -258,7 +295,6 @@ export function renderFeedList(feeds: Feed[] | null | undefined): void {
         listItem.appendChild(faviconImg);
         listItem.appendChild(titleSpan);
 
-        // Unread Count Badge
         if (unreadCount > 0) {
             const countSpan = document.createElement('span') as HTMLSpanElement;
             countSpan.className = 'bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-2 flex-shrink-0';
@@ -266,10 +302,9 @@ export function renderFeedList(feeds: Feed[] | null | undefined): void {
             listItem.appendChild(countSpan);
         }
 
-        // Use the stored click handler
         if (feedItemClickHandler) {
              listItem.addEventListener('click', () => {
-                if (feedItemClickHandler) { // Double-check handler exists before calling
+                if (feedItemClickHandler) {
                     feedItemClickHandler(feed.id, feed.feed_title || 'Untitled Feed');
                 }
             });
@@ -280,77 +315,94 @@ export function renderFeedList(feeds: Feed[] | null | undefined): void {
         feedListElement.appendChild(listItem);
     });
 
-    // Clear the loading message now that feeds have been rendered
     showFeedMessage('');
 }
 
 /** Renders the list of stories for a feed in the UI */
-export function renderStories(stories: Story[], feedTitle: string): void {
-    const storyListElement = getElement<HTMLUListElement>('story-list');
-    const storyTitleElement = getElement<HTMLSpanElement>('story-list-title');
+export function renderStories(stories: Story[], feedTitle: string, onItemClick: (story: Story) => void): void {
+    console.log(`UI: Rendering ${stories.length} stories for feed: ${feedTitle}`);
+    const storyList = getElement<HTMLUListElement>('story-list');
+    const storyListTitle = getElement<HTMLHeadingElement>('story-list-title');
 
-    if (!storyListElement || !storyTitleElement) {
-        console.error('Story list or title element not found!');
+    storyList.innerHTML = '';
+    storyListTitle.textContent = feedTitle;
+
+    if (stories.length === 0) {
+        showStoryMessage('No stories found for this feed.');
         return;
     }
 
-    clearStoryDisplay(); // Clear previous stories and messages
-    storyTitleElement.textContent = feedTitle; // Set the feed title
+    stories.forEach(story => {
+        const li = document.createElement('li');
+        li.className = 'p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800';
+        li.dataset.storyHash = story.story_hash ?? String(story.id);
+        li.dataset.storyId = String(story.id);
 
-    if (!stories || stories.length === 0) {
-        showStoryMessage('No stories found in this feed.');
-        return;
-    }
-
-    // Create and append story items
-    stories.forEach((story: Story) => {
-        const listItem = document.createElement('li');
-        // Base classes + border
-        listItem.className = 'py-3 px-4 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0';
-        listItem.dataset.storyId = String(story.id); // Assuming story.id exists
-
-        // Apply read/unread styling
-        // Using 0 for unread, 1 for read based on typical NewsBlur API (adjust if different)
-        const isRead = story.read_status === 1;
-        if (isRead) {
-            listItem.classList.add('text-gray-500', 'dark:text-gray-400', 'font-normal');
+        if (story.read_status === 1) {
+            li.classList.add('font-normal', 'text-gray-500', 'dark:text-gray-400');
         } else {
-            listItem.classList.add('text-gray-800', 'dark:text-gray-100', 'font-semibold');
+            li.classList.add('font-semibold');
         }
 
-        // Story Title
         const titleSpan = document.createElement('span');
-        titleSpan.className = 'block truncate'; // Allow truncation if needed
-        titleSpan.textContent = story.story_title || 'Untitled Story';
-        listItem.appendChild(titleSpan);
+        titleSpan.className = 'block font-medium';
+        titleSpan.textContent = story.story_title || '[No Title]';
 
-        // Story Date (simple format for now)
-        try {
-            const date = new Date(story.story_date);
-            const dateSpan = document.createElement('span');
-            dateSpan.className = 'text-xs text-gray-400 dark:text-gray-500 block mt-1';
-            // Format as locale date string
-            dateSpan.textContent = date.toLocaleDateString(undefined, {
-                year: 'numeric', month: 'short', day: 'numeric'
-             });
-            listItem.appendChild(dateSpan);
-        } catch (e) {
-            console.warn('Could not parse story date:', story.story_date);
-            // Optionally display the raw date or nothing
-        }
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'block text-xs text-gray-500 dark:text-gray-400 mt-1';
+        dateSpan.textContent = formatDateString(story.story_date);
 
-        // Add click listener (placeholder for now, will be handled in app.ts later)
-        listItem.addEventListener('click', () => {
-            console.log(`Story clicked: ${story.id} (Read status: ${isRead})`);
-            // TODO: Implement story view/mark as read logic in app.ts
-        });
+        li.appendChild(titleSpan);
+        li.appendChild(dateSpan);
+        
+        li.addEventListener('click', () => onItemClick(story));
 
-        storyListElement.appendChild(listItem);
+        storyList.appendChild(li);
     });
-
-    showStoryMessage(''); // Clear loading/error message
+    showStoryMessage('');
 }
 
-// Add other UI-related functions as needed (e.g., renderFeedItems, renderStory)
-// Note: If other functions are added that use elements like loginForm or logoutButton,
-// they will need to query for those elements within their scope too.
+export function showStoryContentView() {
+    const loginView = getElement<HTMLDivElement>('login-view');
+    const feedListView = getElement<HTMLDivElement>('feed-list-view');
+    const storyListView = getElement<HTMLDivElement>('story-list-view');
+    const storyContentView = getElement<HTMLDivElement>('story-content-view');
+    const storyContentTitle = getElement<HTMLHeadingElement>('story-content-title');
+    const storyContentAuthor = getElement<HTMLParagraphElement>('story-content-author');
+    const storyContentDate = getElement<HTMLParagraphElement>('story-content-date');
+    const storyContentBody = getElement<HTMLDivElement>('story-content-body');
+    const storyContentMessage = getElement<HTMLParagraphElement>('story-content-message');
+    const backToStoryListButton = getElement<HTMLButtonElement>('back-to-story-list-button');
+
+    loginView.classList.add('hidden');
+    feedListView.classList.add('hidden');
+    storyListView.classList.add('hidden');
+    storyContentView.classList.remove('hidden');
+    storyContentTitle.textContent = '';
+    storyContentAuthor.textContent = '';
+    storyContentDate.textContent = '';
+    storyContentBody.innerHTML = '';
+    storyContentMessage.textContent = '';
+    storyContentMessage.classList.add('hidden');
+}
+
+export function renderStoryContent(story: Story) {
+    console.log(`UI: Rendering content for story: ${story.story_title}`);
+    const storyContentTitle = getElement<HTMLHeadingElement>('story-content-title');
+    const storyContentAuthor = getElement<HTMLParagraphElement>('story-content-author');
+    const storyContentDate = getElement<HTMLParagraphElement>('story-content-date');
+    const storyContentBody = getElement<HTMLDivElement>('story-content-body');
+    const storyContentMessage = getElement<HTMLParagraphElement>('story-content-message');
+
+    storyContentTitle.textContent = story.story_title;
+    storyContentAuthor.textContent = story.story_authors || '[No Author]';
+    storyContentDate.textContent = formatDateString(story.story_date);
+    storyContentBody.innerHTML = story.story_content;
+    storyContentMessage.textContent = '';
+    storyContentMessage.classList.add('hidden');
+}
+
+export function setBackToStoryListClickHandler(handler: () => void) {
+    const backToStoryListButton = getElement<HTMLButtonElement>('back-to-story-list-button');
+    backToStoryListButton.addEventListener('click', handler);
+}

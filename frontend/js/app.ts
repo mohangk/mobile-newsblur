@@ -3,12 +3,14 @@
 // Import necessary functions from API and UI modules
 import * as api from './api';
 // Re-import necessary types specifically FROM ./types
-import type { Feed, FeedMap, FeedResponse, Story } from './types';
+import type { Feed, FeedMap, FeedResponse, Story, ApiError } from './types';
 // Import the whole ui module
 import * as ui from './ui';
 
 // --- State ---
 let isLoading = false; // Prevent concurrent API calls
+let currentFeeds: Feed[] = [];
+let currentStories: Story[] = []; // Store fetched stories for the current feed
 
 // --- Core Application Logic ---
 
@@ -37,7 +39,7 @@ async function checkAuthAndLoadView(): Promise<void> {
 }
 
 /** Handles the login form submission */
-async function handleLoginSubmit(): Promise<void> { // Removed event parameter
+async function handleLoginSubmit() {
     if (isLoading) return;
 
     // Get credentials via the UI module
@@ -83,12 +85,9 @@ async function fetchAndDisplayFeeds(): Promise<void> {
         const feedData: { feeds?: FeedMap, folders?: any[] } = await api.getFeeds();
         console.log("DEBUG: api.getFeeds returned:", feedData);
 
-        const feedsMap = feedData?.feeds;
-        // Ensure feedsArray is correctly typed as Feed[]
-        const feedsArray: Feed[] = feedsMap ? Object.values(feedsMap) : [];
-        console.log(`DEBUG: Processing feeds. Resulting feedsArray: ${feedsArray.length} feeds`);
-
-        ui.renderFeedList(feedsArray);
+        currentFeeds = Object.values(feedData.feeds || {}); // Store feeds
+        ui.renderFeedList(currentFeeds);
+        ui.showFeedMessage(''); // Clear loading message
 
     } catch (error: any) {
         console.error("DEBUG: Error in fetchAndDisplayFeeds:", error);
@@ -119,46 +118,69 @@ async function handleLogout(): Promise<void> {
 }
 
 /** Handles clicking on a specific feed item */
-async function handleFeedItemClick(feedId: string | number, feedTitle: string): Promise<void> {
-    if (isLoading) return;
-    isLoading = true;
+async function handleFeedItemClick(feedId: string | number, feedTitle: string) {
     console.log(`App: Feed item clicked: ${feedId} ('${feedTitle}')`);
+    if (isLoading) return;
 
-    ui.showStoryListView(); // Show the view container immediately
-    ui.clearStoryDisplay(); // Clear previous content/messages
-    ui.showStoryMessage('Loading stories...'); // Show loading message
+    isLoading = true;
+    currentStories = [];
+    ui.showStoryListView();
+    ui.showStoryMessage('Loading stories...');
 
     try {
-        const stories: Story[] = await api.getStoriesForFeed(feedId);
+        // Convert feedId to string for the API call
+        const stories = await api.getStoriesForFeed(String(feedId));
         console.log(`App: Received ${stories.length} stories for feed ${feedId}`);
-        ui.renderStories(stories, feedTitle);
-        // Message cleared by renderStories if successful
-    } catch (error: any) {
+        currentStories = stories; // Store the fetched stories
+        
+        ui.renderStories(stories, feedTitle, (clickedStory: Story) => {
+            console.log(`App: Story item clicked: ${clickedStory.id}`);
+            if (isLoading) return; // Optional: prevent clicking while something else is loading
+            
+            // Find story using loose equality comparison for id (string | number)
+            const storyData = currentStories.find(s => s.id == clickedStory.id);
+            
+            if (storyData) {
+                ui.showStoryContentView();
+                ui.renderStoryContent(storyData);
+            } else {
+                console.error('Clicked story data not found in currentStories');
+                ui.showStoryMessage('Could not display story.'); // Show error in story list view
+            }
+        });
+        ui.showStoryMessage(''); // Clear loading message
+    } catch (error) {
         console.error(`App: Error fetching stories for feed ${feedId}:`, error);
-        const message = error.data?.message || error.message || 'Failed to load stories.';
-        ui.clearStoryDisplay(); // Clear partial content potentially
-        ui.showStoryMessage(message, true);
-        // Keep the story view visible to show the error
+        const apiError = error as ApiError;
+        ui.showStoryMessage(`Error loading stories: ${apiError.message}`);
+        currentStories = []; // Clear stories on error
+        ui.renderStories([], feedTitle, () => {}); // Render empty list with title
     } finally {
         isLoading = false;
     }
 }
 
+// New: Handle back button from story content view to story list view
+function handleBackToStoryListClick() {
+    if (isLoading) return; 
+    console.log('App: Back to story list clicked.');
+    ui.showStoryListView(); 
+    // We don't need to re-render stories, they are still in the DOM unless cleared by showStoryListView
+}
+
 // --- Initialization ---
 
-function initializeApp(): void {
+export function initializeApp(): void {
     console.log("App: Initializing...");
 
     // Register the click handler with the UI module first
     // Note: ui.setFeedItemClickHandler expects (id, title) => void
-    ui.setFeedItemClickHandler((feedId, feedTitle) => {
-        handleFeedItemClick(feedId, feedTitle); // Call the async function
-    });
+    ui.setFeedItemClickHandler(handleFeedItemClick);
 
     // Initialize the UI, passing the handlers for form/button events
     ui.initializeUI({
         onLoginSubmit: handleLoginSubmit, // Pass the function reference
-        onLogoutClick: handleLogout       // Pass the function reference
+        onLogoutClick: handleLogout,            // Pass the function reference
     });
 
     // Add listener for the back button
@@ -173,6 +195,8 @@ function initializeApp(): void {
         console.warn("App: Back button not found during initialization.");
     }
 
+    // Add handler for the new back button
+    ui.setBackToStoryListClickHandler(handleBackToStoryListClick);
 
     // Initial check to see if user is already logged in
     checkAuthAndLoadView();

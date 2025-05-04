@@ -2,12 +2,14 @@
 // Define types directly here for now, or create a types.ts file later
 
 // Import shared types from the new types file
-import type {
+import {
     BaseResponse,
     ApiError,
     FeedResponse,
-    Story, // Add back Story as it IS used directly
-    StoryResponse
+    Story,
+    StoryResponse,
+    Feed,
+    FeedMap,
 } from './types';
 
 // --- API Configuration ---
@@ -155,24 +157,28 @@ export async function checkAuth(): Promise<boolean> {
 }
 
 /** Fetches stories for a specific feed */
-export async function getStoriesForFeed(feedId: string | number): Promise<Story[]> {
+export async function getStoriesForFeed(feedId: string): Promise<Story[]> {
     if (!feedId) {
         throw new Error("Feed ID is required to fetch stories.");
     }
-    console.log(`API: Fetching stories for feed ${feedId}...`);
-    // Request stories ordered by newest, but still sort client-side for safety
+    console.log(`API: Fetching stories for feed ${feedId} using apiFetch...`);
+    // Use apiFetch with the original endpoint and response type
+    // StoryResponse now correctly defines stories as Story[]
     const data = await apiFetch<StoryResponse>(`/reader/feed/${feedId}?order=newest`);
-    const storiesMap = data.stories || {};
-    const storiesArray = Object.values(storiesMap);
-    // Explicitly sort client-side because Object.values() does not guarantee order
-    // preservation when converting the API's story map object to an array.
-    // This ensures newest stories appear first, regardless of JS engine behavior.
-    storiesArray.sort((a: Story, b: Story) => { // Explicitly type a and b
-        // Handle potential undefined or null dates if necessary, though API should provide them
+    
+    // No need to convert map to array anymore
+    const storiesArray: Story[] = data.stories || []; 
+    
+    // Keep client-side sorting
+    storiesArray.sort((a: Story, b: Story) => { 
         const dateA = new Date(a.story_date).getTime();
         const dateB = new Date(b.story_date).getTime();
-        return dateB - dateA; // Descending order
+        if (isNaN(dateA) && isNaN(dateB)) return 0;
+        if (isNaN(dateA)) return 1;
+        if (isNaN(dateB)) return -1;
+        return dateB - dateA;
     });
-    console.log(`API: Received stories for feed ${feedId}:`, storiesArray.length);
+
+    console.log(`API: Received and processed stories for feed ${feedId}:`, storiesArray.length);
     return storiesArray;
 }
