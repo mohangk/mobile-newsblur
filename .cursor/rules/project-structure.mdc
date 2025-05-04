@@ -1,0 +1,22 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Project Overview and Structure
+
+This project is a mobile-focused NewsBlur feed reader, implemented as a monorepo containing:
+
+1.  **Backend:** A Cloudflare Worker ([src/index.ts](mdc:src/index.ts)) using the Hono framework. It acts as a secure proxy to the official NewsBlur API, handling CORS and session management via Cloudflare KV.
+    - Configuration: [wrangler.toml](mdc:wrangler.toml)
+    - Dependencies: Defined in root [package.json](mdc:package.json)
+
+2.  **Frontend:** A vanilla TypeScript Single Page Application (SPA) located in the `frontend/` directory.
+    - Main HTML: [frontend/index.html](mdc:frontend/index.html)
+    - Core Logic: [frontend/js/app.ts](mdc:frontend/js/app.ts) (handles state, event listeners, coordination)
+    - API Calls: [frontend/js/api.ts](mdc:frontend/js/api.ts) (uses `apiFetch` helper to call the backend worker)
+    - UI/DOM Manipulation: [frontend/js/ui.ts](mdc:frontend/js/ui.ts)
+    - Shared Types: [frontend/js/types.ts](mdc:frontend/js/types.ts)
+    - Styling: Tailwind CSS ([frontend/tailwind.config.js](mdc:frontend/tailwind.config.js), [frontend/css/input.css](mdc:frontend/css/input.css))
+    - Dependencies & Scripts: [frontend/package.json](mdc:frontend/package.json)
+    - Testing: Vitest/JSDOM ([frontend/js/*.test.ts](mdc:frontend/js), [frontend/vitest.setup.js](mdc:frontend/vitest.setup.js))

@@ -1,0 +1,17 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Backend Authentication Flow
+
+The backend worker ([src/index.ts](mdc:src/index.ts)) handles authentication dynamically during login, **not** using a pre-configured `NEWSBLUR_COOKIE` secret.
+
+1.  Frontend sends username/password to `/proxy/api/login`.
+2.  Worker sends these credentials to the real NewsBlur API (`https://newsblur.com/api/login`).
+3.  Worker extracts the `newsblur_sessionid=...` value from the `Set-Cookie` header in NewsBlur's successful response.
+4.  Worker generates its own unique session ID (`proxy_session_id`).
+5.  Worker stores the extracted `newsblur_sessionid` string in Cloudflare KV (using the `SESSIONS` binding configured in [wrangler.toml](mdc:wrangler.toml)), keyed by the worker's generated `proxy_session_id`.
+6.  Worker sets the `proxy_session_id` cookie (HttpOnly, Secure, SameSite=Lax/None) containing the worker-generated ID back to the frontend browser.
+7.  For subsequent frontend requests, the browser sends the `proxy_session_id` cookie.
+8.  The worker reads this cookie, looks up the real `newsblur_sessionid` string from KV, and uses that string in the `Cookie` header when making upstream requests to NewsBlur.
