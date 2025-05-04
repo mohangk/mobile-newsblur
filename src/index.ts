@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
+import type { Context } from 'hono';
 
 // Define the expected shape of the Cloudflare environment bindings
 type Bindings = {
@@ -19,19 +20,35 @@ type Variables = {
 // Constants
 const NEWSBLUR_BASE_URL = 'https://newsblur.com';
 const PROXY_SESSION_COOKIE_NAME = 'proxy_session_id';
-const DEFAULT_FRONTEND_URL = 'http://localhost:8080'; // Default for local/missing env var
 
 // Initialize Hono App with TypeScript generics
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // --- Helper Functions ---
 
-function getFrontendOrigin(c: any): string {
-    // Use type assertion 'any' for context 'c' if exact Hono context type isn't readily available or needed for this simple access
-    return c.env.FRONTEND_URL || DEFAULT_FRONTEND_URL;
+function getFrontendOrigin(c: Context<{ Bindings: Bindings; Variables: Variables }>): string {
+    const requestOrigin = c.req.header('Origin');
+
+    if (requestOrigin) {
+        // If the Origin header is present, trust it as the frontend origin.
+        // console.log(`Using request Origin header for CORS: ${requestOrigin}`); // Optional log
+        return requestOrigin;
+    } else {
+        // Fallback if Origin header is missing (e.g., some server-to-server requests, older browsers, or misconfigurations)
+        const envUrl = c.env.FRONTEND_URL;
+        if (envUrl) {
+            console.warn(`Origin header missing, falling back to FRONTEND_URL env var: ${envUrl}`);
+            return envUrl;
+        } else {
+            // Last resort: Throw an error if no origin can be determined
+            console.error(`Origin header missing and FRONTEND_URL env var not set. Cannot configure CORS.`);
+            // Use HTTPException for proper error handling in Hono
+            throw new HTTPException(500, { message: 'Worker configuration error: Frontend origin cannot be determined.' });
+        }
+    }
 }
 
-function getSecureFlag(c: any): boolean {
+function getSecureFlag(c: Context<{ Bindings: Bindings; Variables: Variables }>): boolean {
     // Cookies should be secure if the worker is likely running over HTTPS.
     // For local dev (localhost or 127.0.0.1 over HTTP), it should be false.
     try {
@@ -54,6 +71,32 @@ function getSecureFlag(c: any): boolean {
     }
 }
 
+/**
+ * Determines the SameSite attribute based on request origin vs worker origin.
+ * Returns 'Lax' if the request Origin header matches the worker's origin (same-site).
+ * Returns 'None' otherwise (cross-site or Origin header missing).
+ */
+function getSameSiteAttribute(c: Context<{ Bindings: Bindings; Variables: Variables }>): 'None' | 'Lax' {
+    try {
+        const workerUrl = new URL(c.req.url);
+        const workerOrigin = workerUrl.origin; // e.g., "https://worker.example.com"
+        const requestOrigin = c.req.header('Origin'); // e.g., "https://frontend.example.com" or the worker origin
+
+        // If the Origin header exists and matches the worker's origin, it's a same-site request.
+        if (requestOrigin && requestOrigin === workerOrigin) {
+            //console.log(`SameSite Check: Request origin (${requestOrigin}) matches worker origin (${workerOrigin}). Using SameSite=Lax.`);
+            return 'Lax';
+        } else {
+             //console.log(`SameSite Check: Request origin (${requestOrigin || 'missing'}) differs from worker origin (${workerOrigin}). Using SameSite=None.`);
+        }
+    } catch (e) {
+        // Should not happen with valid c.req.url, but be safe
+        console.error("Error determining SameSite attribute:", e);
+    }
+    // Default to 'None' for cross-origin requests or if Origin header is absent/mismatched.
+    // This requires Secure=true (handled by getSecureFlag).
+    return 'None';
+}
 
 // --- Middleware ---
 
@@ -145,11 +188,11 @@ app.post('/proxy/api/login', async (c) => {
                  // Use 'as const' for correct type inference, especially for sameSite
                  const cookieOptions = {
                     path: '/',
-                    secure: getSecureFlag(c), // Determine based on context
                     httpOnly: true,
-                    maxAge: sessionDurationSeconds,
-                    sameSite: 'Lax'
-                 } as const; // Add 'as const' here
+                    secure: getSecureFlag(c), // Use existing helper for Secure
+                    sameSite: getSameSiteAttribute(c), // Use NEW helper for SameSite
+                    maxAge: sessionDurationSeconds
+                 } as const;
                  console.log(`[${new Date().toISOString()}] Setting cookie with options: ${JSON.stringify(cookieOptions)}`);
                  setCookie(c, PROXY_SESSION_COOKIE_NAME, sessionId, cookieOptions);
 
