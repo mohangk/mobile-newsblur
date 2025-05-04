@@ -7,6 +7,9 @@ frontend/node_modules/
 # Frontend CSS build output
 frontend/css/style.css
 
+# Frontend configs
+frontend/.env*
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

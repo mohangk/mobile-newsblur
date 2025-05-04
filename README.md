@@ -2,7 +2,7 @@
 
 This repository contains the code for a mobile-focused NewsBlur feed reader, consisting of:
 
-1.  **Backend:** A Cloudflare Worker (using Hono and TypeScript) acting as a secure proxy to the NewsBlur API.
+1.  **Backend:** A Cloudflare Worker (using Hono and TypeScript) acting as a secure proxy to the NewsBlur API. It handles session management from the frontend to the newsblur api.
 2.  **Frontend:** A vanilla JavaScript, HTML, and Tailwind CSS single-page application.
 
 The backend proxy handles CORS and securely manages the NewsBlur session cookie using Cloudflare KV.
@@ -155,3 +155,38 @@ You can test the backend worker API directly using `curl`. See examples below, r
          --cookie "proxy_session_id=<value_from_login>" \
          <worker_url>/proxy/reader/feeds
     ```
+
+### Frontend Development
+
+Navigate to the `frontend/` directory for specific frontend tasks.
+
+```bash
+cd frontend
+npm install
+```
+
+Key commands:
+
+*   `npm run dev`: Starts the Vite development server (usually on `http://localhost:5173`). Requires the backend worker to be running separately.
+*   `npm test`: Runs Vitest unit tests.
+*   `npm run build`: Creates a production build of the frontend in `frontend/dist/`.
+*   `npm run build:css`: Runs Tailwind CSS to generate `style.css` from `input.css`. The `dev` script doesn't automatically handle Tailwind processing, so you might need to run this separately or in watch mode (`npm run build:css -- --watch`) alongside `npm run dev` if making style changes.
+
+#### API Base URL Configuration
+
+The frontend needs to know the URL of the backend proxy worker. This is configured using environment variables managed by Vite:
+
+1.  Create two files in the `frontend/` directory:
+    *   `.env.development`: Used by `npm run dev`.
+        ```env
+        # Example: Use local wrangler dev server
+        VITE_API_BASE_URL=http://localhost:8787
+        ```
+    *   `.env.production`: Used by `npm run build`.
+        ```env
+        # Example: Use deployed worker URL
+        VITE_API_BASE_URL=https://your-worker-subdomain.workers.dev 
+        ```
+        *(Replace `https://your-worker-subdomain.workers.dev` with your actual deployed worker URL)*
+
+2.  The variable **must** be prefixed with `VITE_` (e.g., `VITE_API_BASE_URL`) for Vite to expose it to the frontend code ([frontend/js/api.ts](frontend/js/api.ts) reads `import.meta.env.VITE_API_BASE_URL`).

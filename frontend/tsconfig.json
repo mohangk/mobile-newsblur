@@ -38,8 +38,10 @@
     "noFallthroughCasesInSwitch": true, // Report errors for fallthrough cases in switch statement
 
     /* Other */
-    "skipLibCheck": true           // Skip type checking of all declaration files (*.d.ts)
+    "skipLibCheck": true,           // Skip type checking of all declaration files (*.d.ts)
+    "noEmit": true,                 // Do not emit output (Vite handles this)
+    "types": ["vite/client", "vitest/globals"] // Add vite/client for import.meta.env
   },
-  "include": ["js/**/*.ts", "js/**/*.d.ts", "js/**/*.js"], // Files to include in compilation
+  "include": ["js/**/*.ts", "js/**/*.d.ts", "js/**/*.js", "vitest.setup.js"], // Files to include in compilation
   "exclude": ["node_modules", "dist"] // Files/directories to exclude
 } 

@@ -13,7 +13,22 @@ import {
 } from './types';
 
 // --- API Configuration ---
-const BASE_URL = 'http://localhost:8787'; 
+// Base URL is read from environment variables (Vite exposes VITE_* vars)
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+// Add a check to ensure the variable is set, especially for production builds
+if (!BASE_URL) {
+    console.error("FATAL: VITE_API_BASE_URL is not defined. Set it in your .env files.");
+    // You could throw an error here to prevent running/building with missing config:
+    // throw new Error("VITE_API_BASE_URL environment variable is not set.");
+    // Alerting might be useful during development if you forget the .env file:
+    // alert("FATAL: VITE_API_BASE_URL is not defined. Check .env files or console.");
+} else {
+    // Log for confirmation during development or debugging builds
+    if (import.meta.env.DEV) { // Only log in development
+       console.log(`API Base URL configured to: ${BASE_URL}`);
+    }
+}
 
 // --- Type Definitions (Keep API-specific ones here) ---
 
