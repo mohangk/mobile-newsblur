@@ -126,16 +126,42 @@ To run the full application locally, you'll need **three terminals** running con
 *   All calls targeting the NewsBlur API via the worker should be prefixed with `/proxy` (e.g., `/proxy/api/login`, `/proxy/reader/feeds`). This prefixing, along with adding necessary credentials, is handled automatically by the `apiFetch` helper function in [frontend/js/api.ts](mdc:frontend/js/api.ts).
 *   Authentication relies on the `proxy_session_id` cookie set by the worker and automatically handled by the browser (requires correct `SameSite`, `Secure`, and CORS configuration).
 
-## Deploying
+## Deployment
 
-1.  **Backend:**
-    *   Update `FRONTEND_URL` in `wrangler.toml` to your production frontend URL.
-    *   Consider updating `SameSite` cookie settings in `src/index.ts` to `None` (and ensure `Secure` is `true`) if deploying frontend and backend to different domains.
-    *   Run `npx wrangler deploy` from the project root.
-2.  **Frontend:**
-    *   Build the final CSS (remove `--watch` from `build:css` script if desired).
-    *   Deploy the contents of the `frontend/` directory as a static site using a service like Cloudflare Pages, Netlify, Vercel, etc.
-    *   Ensure the deployed frontend code points its API calls to the deployed worker URL.
+Deploying involves building the frontend and deploying both the backend worker and the frontend static assets.
+
+1.  **Deploy Backend Worker:**
+    *   Ensure `wrangler.toml` is configured with your Cloudflare `account_id` (or use the `CLOUDFLARE_ACCOUNT_ID` env var) and the production `id` for the `SESSIONS` KV namespace binding.
+    *   From the project root directory, run:
+        ```bash
+        npx wrangler deploy
+        ```
+    *   Note the deployed worker URL (e.g., `https://<worker-name>.<your-subdomain>.workers.dev`) from the command output.
+
+2.  **Build Frontend:**
+    *   Ensure the `frontend/.env.production` file exists and its `VITE_API_BASE_URL` variable points to the deployed worker URL noted in the previous step.
+    *   Navigate to the frontend directory:
+        ```bash
+        cd frontend
+        ```
+    *   Run the build command:
+        ```bash
+        npm run build
+        ```
+    *   This creates the production assets in `frontend/dist/`.
+    *   Navigate back to the project root:
+        ```bash
+        cd ..
+        ```
+
+3.  **Deploy Frontend (using Cloudflare Pages):**
+    *   From the **project root** directory, run:
+        ```bash
+        # Ensure <project-name> matches your Cloudflare Pages project
+        npx wrangler pages deploy --project-name <your-cf-pages-project-name> ./frontend/dist
+        ```
+    *   *(Replace `<your-cf-pages-project-name>` with the actual name of your Cloudflare Pages project)*.
+    *   Ensure your DNS is configured to point to the deployed Cloudflare Pages site if using a custom domain.
 
 ## Backend API Testing (Optional)
 
